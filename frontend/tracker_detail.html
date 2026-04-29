@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Détail composant — Tracker IFC</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem; }
+        @media(max-width:700px){ .detail-grid{grid-template-columns:1fr;} }
+        .card { background:white; border-radius:10px; padding:1.5rem; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+        .card-title { font-size:1rem; font-weight:700; color:#1e3a5f; margin-bottom:1rem; display:flex; align-items:center; gap:.4rem; }
+        .info-row { display:flex; justify-content:space-between; padding:.5rem 0; border-bottom:1px solid #f3f4f6; font-size:.9rem; }
+        .info-row:last-child { border:none; }
+        .info-label { color:#6b7280; }
+        .info-value { font-weight:600; color:#374151; }
+        .badge { display:inline-block; padding:3px 12px; border-radius:20px; font-size:.8rem; font-weight:700; }
+        .badge-in_building { background:#dbeafe; color:#1e40af; }
+        .badge-démonté    { background:#fef3c7; color:#92400e; }
+        .badge-transporté { background:#e0e7ff; color:#3730a3; }
+        .badge-stocké     { background:#fce7f3; color:#9d174d; }
+        .badge-réutilisé  { background:#d1fae5; color:#065f46; }
+        .status-btn { padding:.55rem 1.1rem; border:none; border-radius:8px; cursor:pointer; font-size:.88rem; font-weight:600; transition:all .15s; }
+        .status-btn-in_building { background:#dbeafe; color:#1e40af; }
+        .status-btn-démonté    { background:#fef3c7; color:#92400e; }
+        .status-btn-transporté { background:#e0e7ff; color:#3730a3; }
+        .status-btn-stocké     { background:#fce7f3; color:#9d174d; }
+        .status-btn-réutilisé  { background:#d1fae5; color:#065f46; }
+        .status-btn:hover { filter:brightness(.92); transform:scale(1.03); }
+        .status-btn.active { box-shadow:0 0 0 3px #2563eb; }
+        .history-row { display:flex; gap:1rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px solid #f3f4f6; font-size:.85rem; }
+        .history-row:last-child { border:none; }
+        .history-dot { width:10px; height:10px; border-radius:50%; margin-top:4px; flex-shrink:0; }
+        .history-time { color:#9ca3af; white-space:nowrap; }
+        .qr-img { max-width:160px; border-radius:8px; border:1px solid #e5e7eb; margin-top:.5rem; }
+        .note-input { width:100%; border:1px solid #d1d5db; border-radius:6px; padding:.4rem .6rem; font-size:.85rem; margin-top:.5rem; outline:none; }
+        .note-input:focus { border-color:#2563eb; }
+        .back-link { color:#2563eb; text-decoration:none; font-size:.9rem; display:flex; align-items:center; gap:.3rem; margin-bottom:1rem; }
+        .back-link:hover { text-decoration:underline; }
+    </style>
+</head>
+<body>
+<header class="header">
+    <div class="header-content">
+        <div class="logo"><i data-lucide="scan-line"></i> IFC Analyzer</div>
+        <nav>
+            <a href="/tracker" style="color:#93c5fd;text-decoration:none;font-size:.9rem;">← Retour au tracker</a>
+        </nav>
+    </div>
+</header>
+
+<main style="max-width:900px;margin:2rem auto;padding:0 1.5rem;" id="main">
+    <a href="/tracker" class="back-link"><i data-lucide="arrow-left" style="width:16px;height:16px;"></i> Tous les composants</a>
+    <div id="content"><p style="color:#9ca3af;">Chargement...</p></div>
+</main>
+
+<footer class="footer"><p>IFC Analyzer — Tracker © 2025</p></footer>
+
+<script>
+lucide.createIcons();
+
+const componentId = decodeURIComponent(window.location.pathname.replace("/tracker/", ""));
+const STATUS_COLORS = {
+    "in_building": "#1e40af",
+    "démonté":    "#92400e",
+    "transporté": "#3730a3",
+    "stocké":     "#9d174d",
+    "réutilisé":  "#065f46",
+};
+const STATUTS = ["in_building", "démonté", "transporté", "stocké", "réutilisé"];
+
+async function load() {
+    const res = await fetch(`/api/tracker/component/${encodeURIComponent(componentId)}`);
+    if (!res.ok) {
+        document.getElementById("content").innerHTML = '<p style="color:#dc2626;">Composant introuvable.</p>';
+        return;
+    }
+    const comp = await res.json();
+    render(comp);
+}
+
+function render(comp) {
+    const history = comp.history || [];
+    document.title = `${comp.type || comp.id} — Tracker IFC`;
+
+    document.getElementById("content").innerHTML = `
+    <h2 style="font-size:1.4rem;font-weight:700;color:#1e3a5f;margin-bottom:1.2rem;">
+        ${comp.type || "Composant"} — <span style="font-size:1rem;font-weight:400;font-family:monospace;">${comp.id}</span>
+    </h2>
+
+    <div class="detail-grid">
+        <!-- Informations -->
+        <div class="card">
+            <div class="card-title"><i data-lucide="info" style="width:16px;height:16px;"></i> Informations</div>
+            <div class="info-row"><span class="info-label">Type</span><span class="info-value">${comp.type||"—"}</span></div>
+            <div class="info-row"><span class="info-label">Matériau</span><span class="info-value">${comp.material||"—"}</span></div>
+            <div class="info-row"><span class="info-label">Emplacement IFC</span><span class="info-value">${comp.ifc_location||"—"}</span></div>
+            <div class="info-row"><span class="info-label">Statut actuel</span>
+                <span class="badge badge-${comp.status}">${comp.status}</span>
+            </div>
+            <div class="info-row"><span class="info-label">Importé le</span><span class="info-value">${(comp.created_at||"").slice(0,16)}</span></div>
+            <div class="info-row"><span class="info-label">Mis à jour</span><span class="info-value">${(comp.updated_at||"").slice(0,16)}</span></div>
+        </div>
+
+        <!-- QR Code -->
+        <div class="card">
+            <div class="card-title"><i data-lucide="qr-code" style="width:16px;height:16px;"></i> QR Code</div>
+            <p style="font-size:.85rem;color:#6b7280;margin-bottom:.5rem;">Scanner pour accéder à cette fiche.</p>
+            <img src="/api/tracker/component/${encodeURIComponent(comp.id)}/qr" class="qr-img" alt="QR Code">
+            <br>
+            <a href="/api/tracker/component/${encodeURIComponent(comp.id)}/qr" download="qr-${comp.id}.png"
+               style="font-size:.82rem;color:#2563eb;display:inline-flex;align-items:center;gap:.3rem;margin-top:.5rem;">
+                <i data-lucide="download" style="width:13px;height:13px;"></i> Télécharger PNG
+            </a>
+        </div>
+    </div>
+
+    <!-- Changer le statut -->
+    <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-title"><i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> Changer le statut</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:.75rem;">
+            ${STATUTS.map(s => `
+                <button class="status-btn status-btn-${s} ${comp.status===s?'active':''}"
+                    onclick="changeStatus('${s}')">${s}</button>
+            `).join("")}
+        </div>
+        <input class="note-input" id="noteInput" placeholder="Note (optionnel) ex: Déposé par équipe A le 24/04/2025" />
+        <p id="statusMsg" style="font-size:.82rem;margin-top:.4rem;color:#059669;"></p>
+    </div>
+
+    <!-- Historique -->
+    <div class="card">
+        <div class="card-title"><i data-lucide="clock" style="width:16px;height:16px;"></i> Historique des statuts</div>
+        ${history.length === 0
+            ? '<p style="color:#9ca3af;font-size:.85rem;">Aucun historique.</p>'
+            : history.map(h => `
+            <div class="history-row">
+                <div class="history-dot" style="background:${STATUS_COLORS[h.new_status]||'#9ca3af'};"></div>
+                <div style="flex:1;">
+                    <span style="font-weight:600;">${h.new_status}</span>
+                    ${h.old_status ? `<span style="color:#9ca3af;"> ← ${h.old_status}</span>` : ""}
+                    ${h.note ? `<div style="color:#6b7280;font-size:.8rem;margin-top:2px;">${h.note}</div>` : ""}
+                </div>
+                <div class="history-time">${(h.changed_at||"").slice(0,16)}</div>
+            </div>`).join("")
+        }
+    </div>
+    `;
+    lucide.createIcons();
+}
+
+async function changeStatus(newStatus) {
+    const note = document.getElementById("noteInput").value.trim();
+    const res = await fetch(`/api/tracker/component/${encodeURIComponent(componentId)}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus, note: note || null }),
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        document.getElementById("statusMsg").textContent = `Erreur : ${err.detail}`;
+        document.getElementById("statusMsg").style.color = "#dc2626";
+        return;
+    }
+    document.getElementById("statusMsg").textContent = `✅ Statut mis à jour → ${newStatus}`;
+    document.getElementById("noteInput").value = "";
+    setTimeout(load, 600);
+}
+
+load();
+</script>
+</body>
+</html>

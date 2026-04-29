@@ -1,0 +1,13 @@
+services:
+  ifc-analyzer:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATA_DIR=/app/backend/data
+    volumes:
+      - ifc_data:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  ifc_data:

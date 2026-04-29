@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tracker IFC — Suivi des composants</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .tracker-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem; }
+        .tracker-title { font-size:1.5rem; font-weight:700; color:#1e3a5f; display:flex; align-items:center; gap:.5rem; }
+        .stats-row { display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+        .stat-chip { background:white; border:1px solid #e5e7eb; border-radius:8px; padding:.6rem 1.2rem; font-size:.9rem; font-weight:600; color:#374151; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+        .stat-chip span { color:#2563eb; }
+        .filters-row { display:flex; gap:.75rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center; }
+        .filter-select { padding:.45rem .75rem; border:1px solid #d1d5db; border-radius:6px; font-size:.9rem; background:#f9fafb; outline:none; }
+        .import-btn { background:#2563eb; color:white; border:none; padding:.5rem 1.1rem; border-radius:6px; cursor:pointer; font-size:.9rem; font-weight:600; display:flex; align-items:center; gap:.4rem; }
+        .import-btn:hover { background:#1d4ed8; }
+        .comp-table { width:100%; border-collapse:collapse; background:white; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+        .comp-table th { background:#1e3a5f; color:white; padding:10px 12px; font-size:.85rem; text-align:left; }
+        .comp-table td { padding:9px 12px; font-size:.85rem; color:#374151; border-bottom:1px solid #f3f4f6; }
+        .comp-table tr:hover td { background:#f0f4ff; cursor:pointer; }
+        .badge { display:inline-block; padding:2px 10px; border-radius:20px; font-size:.75rem; font-weight:600; }
+        .badge-in_building { background:#dbeafe; color:#1e40af; }
+        .badge-démonté    { background:#fef3c7; color:#92400e; }
+        .badge-transporté { background:#e0e7ff; color:#3730a3; }
+        .badge-stocké     { background:#fce7f3; color:#9d174d; }
+        .badge-réutilisé  { background:#d1fae5; color:#065f46; }
+        .empty-msg { text-align:center; padding:3rem; color:#9ca3af; font-size:.95rem; }
+        .import-info { font-size:.8rem; color:#6b7280; margin-top:.3rem; }
+    </style>
+</head>
+<body>
+<header class="header">
+    <div class="header-content">
+        <div class="logo"><i data-lucide="scan-line"></i> IFC Analyzer</div>
+        <nav style="display:flex;gap:1rem;">
+            <a href="/" style="color:#93c5fd;text-decoration:none;font-size:.9rem;">← Retour à l'analyseur</a>
+        </nav>
+    </div>
+</header>
+
+<main style="max-width:1100px;margin:2rem auto;padding:0 1.5rem;">
+    <div class="tracker-header">
+        <div class="tracker-title"><i data-lucide="map-pin"></i> Suivi des composants IFC</div>
+        <div style="display:flex;gap:.75rem;align-items:center;">
+            <button class="import-btn" onclick="openImportModal()">
+                <i data-lucide="upload"></i> Importer depuis IFC Analyzer
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row" id="statsRow">
+        <div class="stat-chip">Chargement...</div>
+    </div>
+
+    <!-- Filtres -->
+    <div class="filters-row">
+        <select class="filter-select" id="filterStatus" onchange="loadComponents()">
+            <option value="">Tous les statuts</option>
+            <option value="in_building">In building</option>
+            <option value="démonté">Démonté</option>
+            <option value="transporté">Transporté</option>
+            <option value="stocké">Stocké</option>
+            <option value="réutilisé">Réutilisé</option>
+        </select>
+        <select class="filter-select" id="filterType" onchange="loadComponents()">
+            <option value="">Tous les types</option>
+        </select>
+        <span id="countLabel" style="font-size:.85rem;color:#6b7280;margin-left:.5rem;"></span>
+    </div>
+
+    <!-- Tableau -->
+    <table class="comp-table" id="compTable">
+        <thead>
+            <tr>
+                <th>ID</th><th>Type</th><th>Matériau</th>
+                <th>Emplacement IFC</th><th>Statut</th><th>Mis à jour</th>
+            </tr>
+        </thead>
+        <tbody id="compBody"><tr><td colspan="6" class="empty-msg">Chargement...</td></tr></tbody>
+    </table>
+</main>
+
+<!-- Modal import -->
+<div id="importModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:12px;padding:2rem;width:480px;max-width:95vw;">
+        <h3 style="margin:0 0 .5rem;color:#1e3a5f;">Importer des composants</h3>
+        <p style="font-size:.9rem;color:#6b7280;margin-bottom:1rem;">
+            Collez le contenu du fichier <code>ifc-elements.json</code> généré par l'onglet "Exporter JSON".
+        </p>
+        <textarea id="jsonPaste" rows="8" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:.5rem;font-size:.8rem;font-family:monospace;resize:vertical;" placeholder='[{"id":"...","type":"Porte","material":"Bois",...}]'></textarea>
+        <p class="import-info" id="importInfo"></p>
+        <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-top:1rem;">
+            <button onclick="closeImportModal()" style="background:#f3f4f6;border:1px solid #d1d5db;padding:.5rem 1.2rem;border-radius:6px;cursor:pointer;">Annuler</button>
+            <button onclick="doImport()" class="import-btn">Importer</button>
+        </div>
+    </div>
+</div>
+
+<footer class="footer"><p>IFC Analyzer — Tracker © 2025</p></footer>
+
+<script>
+lucide.createIcons();
+
+async function loadStats() {
+    const res = await fetch("/api/tracker/stats");
+    const data = await res.json();
+    const row = document.getElementById("statsRow");
+    const statusLabels = { in_building:"In building", démonté:"Démonté", transporté:"Transporté", stocké:"Stocké", réutilisé:"Réutilisé" };
+    let html = `<div class="stat-chip">Total : <span>${data.total}</span></div>`;
+    for (const [s, n] of Object.entries(data.by_status || {})) {
+        html += `<div class="stat-chip">${statusLabels[s]||s} : <span>${n}</span></div>`;
+    }
+    row.innerHTML = html;
+
+    // Remplir le filtre type
+    const sel = document.getElementById("filterType");
+    sel.innerHTML = '<option value="">Tous les types</option>';
+    for (const t of Object.keys(data.by_type || {})) {
+        sel.innerHTML += `<option value="${t}">${t}</option>`;
+    }
+}
+
+async function loadComponents() {
+    const status = document.getElementById("filterStatus").value;
+    const type   = document.getElementById("filterType").value;
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (type)   params.set("type", type);
+
+    const res  = await fetch("/api/tracker/components?" + params);
+    const data = await res.json();
+    const body = document.getElementById("compBody");
+    document.getElementById("countLabel").textContent = `${data.length} composant(s)`;
+
+    if (!data.length) {
+        body.innerHTML = '<tr><td colspan="6" class="empty-msg">Aucun composant trouvé.</td></tr>';
+        return;
+    }
+    body.innerHTML = data.map(c => `
+        <tr onclick="window.location='/tracker/${encodeURIComponent(c.id)}'">
+            <td style="font-family:monospace;font-size:.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.id}">${c.id}</td>
+            <td>${c.type||"—"}</td>
+            <td>${c.material||"—"}</td>
+            <td>${c.ifc_location||"—"}</td>
+            <td><span class="badge badge-${c.status}">${c.status}</span></td>
+            <td style="font-size:.78rem;color:#9ca3af;">${(c.updated_at||"").slice(0,16)}</td>
+        </tr>
+    `).join("");
+}
+
+function openImportModal() {
+    document.getElementById("importModal").style.display = "flex";
+    document.getElementById("importInfo").textContent = "";
+}
+function closeImportModal() {
+    document.getElementById("importModal").style.display = "none";
+}
+
+async function doImport() {
+    const raw = document.getElementById("jsonPaste").value.trim();
+    let components;
+    try { components = JSON.parse(raw); } catch(e) {
+        document.getElementById("importInfo").textContent = "JSON invalide.";
+        return;
+    }
+    if (!Array.isArray(components)) {
+        document.getElementById("importInfo").textContent = "Le JSON doit être un tableau.";
+        return;
+    }
+    const res = await fetch("/api/tracker/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ components }),
+    });
+    const result = await res.json();
+    document.getElementById("importInfo").textContent =
+        `✅ ${result.created} créé(s), ${result.updated} mis à jour.`;
+    await loadStats();
+    await loadComponents();
+    setTimeout(closeImportModal, 1500);
+}
+
+loadStats();
+loadComponents();
+</script>
+</body>
+</html>
