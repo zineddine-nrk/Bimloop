@@ -25,15 +25,7 @@ const tableBody = document.getElementById("tableBody");
 const noResultsMsg = document.getElementById("noResultsMsg");
 const exportAllPdfBtn = document.getElementById("exportAllPdfBtn");
 const exportTypePdfBtn = document.getElementById("exportTypePdfBtn");
-const exportBtpMatchBtn = document.getElementById("exportBtpMatchBtn");
-const exportPemdBtn = document.getElementById("exportPemdBtn");
-const exportJsonBtn = document.getElementById("exportJsonBtn");
-const exportInertesBtn = document.getElementById("exportInertesBtn");
-const exportEquipementsBtn = document.getElementById("exportEquipementsBtn");
-const btpMatchModal = document.getElementById("btpMatchModal");
-const btpTypeSelect = document.getElementById("btpTypeSelect");
-const btpModalCancelBtn = document.getElementById("btpModalCancelBtn");
-const btpModalExportBtn = document.getElementById("btpModalExportBtn");
+const sendToTrackerBtn = document.getElementById("sendToTrackerBtn");
 const uploadCard = document.querySelector(".upload-card");
 
 // ============================================================
@@ -41,6 +33,142 @@ const uploadCard = document.querySelector(".upload-card");
 // ============================================================
 let allElements = [];
 let currentFilter = "Tous";
+let dbStatuses = {};
+
+// Backend renvoie des types et statuts en français (clés canoniques) ;
+// on les affiche en anglais via ces tables.
+const TYPE_LABELS_EN = {
+    "Tous":       "All",
+    "Mur":        "Wall",
+    "Mur rideau": "Curtain wall",
+    "Porte":      "Door",
+    "Fenêtre":    "Window",
+    "Dalle":      "Slab",
+    "Escalier":   "Stairs",
+    "Toiture":    "Roof",
+    "Poutre":     "Beam",
+    "Poteau":     "Column",
+    "Inconnu":    "Unknown",
+};
+function typeLabel(t) { return TYPE_LABELS_EN[t] || t || "—"; }
+
+const STATUS_LABELS_EN = {
+    "in_building":  "In building",
+    "démonté":      "Dismantled",
+    "transporté":   "In transit",
+    "stocké":       "Stored",
+    "réutilisé":    "Reused",
+    "à réutiliser": "To reuse",
+    "à recycler":   "To recycle",
+};
+function statusLabel(s) { return STATUS_LABELS_EN[s] || s; }
+
+const _LS_KEY_LAST_EXTRACTION = "ifc_analyzer:last_extraction_v1";
+
+// IndexedDB (quota >> localStorage : ~100Mo+ contre 5Mo)
+const _IDB_NAME  = "ifc_analyzer_db";
+const _IDB_STORE = "extractions";
+
+function _openIdb() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(_IDB_NAME, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(_IDB_STORE)) {
+                db.createObjectStore(_IDB_STORE);
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror   = () => reject(req.error);
+    });
+}
+
+function saveLastExtraction(payload) {
+    return _openIdb().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction(_IDB_STORE, "readwrite");
+        tx.objectStore(_IDB_STORE).put(payload, _LS_KEY_LAST_EXTRACTION);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror    = () => { db.close(); reject(tx.error); };
+    })).catch(err => console.warn("saveLastExtraction failed:", err));
+}
+
+function loadLastExtraction() {
+    return _openIdb().then(db => new Promise((resolve, reject) => {
+        const tx  = db.transaction(_IDB_STORE, "readonly");
+        const req = tx.objectStore(_IDB_STORE).get(_LS_KEY_LAST_EXTRACTION);
+        req.onsuccess = () => { db.close(); resolve(req.result || null); };
+        req.onerror   = () => { db.close(); reject(req.error); };
+    })).catch(err => { console.warn("loadLastExtraction failed:", err); return null; });
+}
+
+async function _purgeStoredExtraction() {
+    try {
+        const db = await _openIdb();
+        const tx = db.transaction(_IDB_STORE, "readwrite");
+        tx.objectStore(_IDB_STORE).delete(_LS_KEY_LAST_EXTRACTION);
+        await new Promise((res) => { tx.oncomplete = res; tx.onerror = res; });
+        db.close();
+    } catch (e) { /* silencieux */ }
+}
+
+// Règles :
+// - Refresh (F5/Ctrl+R) → on purge (l'utilisateur veut repartir à zéro)
+// - Ouverture directe (URL tapée, bookmark, nouvel onglet) → on purge
+// - Navigation depuis une autre page de l'app (clic sidebar) → on restaure
+function _shouldRestoreExtraction() {
+    try {
+        const nav = performance.getEntriesByType("navigation")[0];
+        const navType = nav ? nav.type : (performance.navigation && performance.navigation.type === 1 ? "reload" : "navigate");
+        if (navType === "reload") return false;
+        // Restaurer uniquement si on vient d'une autre page du même domaine
+        if (document.referrer) {
+            try {
+                const ref = new URL(document.referrer);
+                if (ref.origin === window.location.origin && ref.pathname !== window.location.pathname) {
+                    return true;
+                }
+            } catch (_) {}
+        }
+        return false;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function restoreLastExtractionIfAny() {
+    if (!_shouldRestoreExtraction()) {
+        await _purgeStoredExtraction();
+        return;
+    }
+
+    const saved = await loadLastExtraction();
+    if (!saved || !Array.isArray(saved.elements) || saved.elements.length === 0) return;
+
+    allElements = saved.elements;
+    currentFilter = "Tous";
+
+    showSuccessMessage(saved.message || "Extraction restored.");
+    showWarnings(saved.avertissements || []);
+    if (saved.resume) {
+        showSummary(saved.resume);
+        showTypeCount(saved.resume.par_type);
+        showFilters(saved.resume.par_type);
+    } else {
+        // fallback : construire un résumé minimal si nécessaire
+        const parType = allElements.reduce((acc, e) => {
+            const t = e.type || "Inconnu";
+            acc[t] = (acc[t] || 0) + 1;
+            return acc;
+        }, {});
+        const resume = { total: allElements.length, par_type: parType };
+        showSummary(resume);
+        showTypeCount(parType);
+        showFilters(parType);
+    }
+
+    showTable(allElements);
+    fetchDbStatuses();
+}
 
 // ============================================================
 // EXPORT PDF
@@ -91,113 +219,6 @@ function exportTypeToCsv() {
     const filename = currentFilter === "Tous" ? "ifc-tous.csv" : `ifc-${currentFilter.toLowerCase()}.csv`;
     downloadCsv(buildCsv(cols, elems), filename);
 }
-
-// ============================================================
-// EXPORT CSV INERTES / ÉQUIPEMENTS
-// ============================================================
-
-const TYPES_INERTES     = ["Mur", "Mur rideau", "Dalle"];
-const TYPES_EQUIPEMENTS = ["Porte", "Fen\u00eatre", "Escalier"];
-
-// Densités approx. en kg/m³ selon matériau principal
-const DENSITES = {
-    "béton": 2400, "beton": 2400, "concrete": 2400,
-    "béton armé": 2500, "béton armé": 2500,
-    "brique": 1800, "brick": 1800,
-    "pierre": 2600, "stone": 2600,
-    "bois": 700, "wood": 700,
-    "acier": 7850, "steel": 7850,
-    "aluminium": 2700, "aluminum": 2700,
-    "verre": 2500, "glass": 2500,
-    "plâtre": 1200, "platre": 1200,
-    "gypse": 1200,
-};
-
-function getDensite(materiau) {
-    if (!materiau) return 2000;
-    const m = materiau.toLowerCase();
-    for (const [key, val] of Object.entries(DENSITES)) {
-        if (m.includes(key)) return val;
-    }
-    return 2000; // valeur par défaut
-}
-
-function calcVolume(elem) {
-    if (elem.net_volume != null) return elem.net_volume;
-    const h = elem.hauteur, l = elem.longueur, e = elem.epaisseur;
-    if (elem.type === "Dalle" && elem.net_area != null && e != null)
-        return Math.round(elem.net_area * e * 1000) / 1000;
-    if (h != null && l != null && e != null)
-        return Math.round(h * l * e * 1000) / 1000;
-    return null;
-}
-
-function exportInertesCsv() {
-    const elems = allElements.filter(e => TYPES_INERTES.includes(e.type));
-    if (!elems.length) { alert("Aucun élément inerte trouvé."); return; }
-
-    const cols = [
-        "Nom/ID", "Type", "Étage", "Matériau",
-        "Hauteur (m)", "Longueur (m)", "Épaisseur (m)",
-        "Volume (m³)", "Densité (kg/m³)", "Masse (kg)"
-    ];
-    const header = cols.map(c => toCsvCell(c)).join(";");
-
-    let totalVol = 0, totalMasse = 0;
-    let hasVol = false;
-
-    const rows = elems.map(e => {
-        const vol = calcVolume(e);
-        const dens = getDensite(e.materiau);
-        const masse = vol != null ? Math.round(vol * dens) : null;
-        if (vol != null) { totalVol += vol; hasVol = true; }
-        if (masse != null) totalMasse += masse;
-        return [
-            e.nom || e.id || "",
-            e.type || "",
-            e.etage || "",
-            e.materiau || "",
-            e.hauteur ?? "",
-            e.longueur ?? "",
-            e.epaisseur ?? "",
-            vol ?? "",
-            dens,
-            masse ?? "",
-        ].map(toCsvCell).join(";");
-    });
-
-    const separator = ";".repeat(cols.length - 1);
-    const totals = [
-        toCsvCell("TOTAL"),
-        toCsvCell(""), toCsvCell(""), toCsvCell(""),
-        toCsvCell(""), toCsvCell(""), toCsvCell(""),
-        toCsvCell(hasVol ? Math.round(totalVol * 1000) / 1000 : ""),
-        toCsvCell(""),
-        toCsvCell(totalMasse > 0 ? totalMasse : ""),
-    ].join(";");
-
-    const csv = [header, ...rows, "", totals].join("\r\n");
-    downloadCsv(csv, "ifc-inertes.csv");
-}
-
-function exportCategorieCsv(types, filename) {
-    const elems = allElements.filter(e => types.includes(e.type));
-    if (!elems.length) {
-        alert(`Aucun élément trouvé pour cette catégorie.`);
-        return;
-    }
-    const sections = types
-        .filter(t => elems.some(e => e.type === t))
-        .map(typeName => {
-            const sub = elems.filter(e => e.type === typeName);
-            const cols = getColumnsForType(typeName);
-            return `${typeName}\r\n${buildCsv(cols, sub)}`;
-        });
-    downloadCsv(sections.join("\r\n\r\n"), filename);
-}
-
-exportInertesBtn.addEventListener("click",    e => showFormatPicker(e, exportInertesCsv, exportInertesPdf));
-exportEquipementsBtn.addEventListener("click", e => showFormatPicker(e, () => exportCategorieCsv(TYPES_EQUIPEMENTS, "ifc-equipements.csv"), () => exportCategoriePdf(TYPES_EQUIPEMENTS, "Équipements", "ifc-equipements.pdf")));
 
 // ============================================================
 // FORMAT PICKER (CSV / PDF)
@@ -264,7 +285,7 @@ async function downloadTablePdf(title, headers, rows, filename) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, headers, rows, filename }),
     });
-    if (!res.ok) { alert("Erreur génération PDF."); return; }
+    if (!res.ok) { alert("PDF generation error."); return; }
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
@@ -276,7 +297,7 @@ function exportAllToPdf() {
     const types   = [...new Set(allElements.map(e => e.type))];
     const allCols = getColumnsForType(null);
     const { headers, rows } = buildTableData(allCols, allElements);
-    downloadTablePdf("Export complet — IFC Analyzer", headers, rows, "ifc-export-complet.pdf");
+    downloadTablePdf("Full export — IFC Analyzer", headers, rows, "ifc-full-export.pdf");
 }
 
 function exportTypeToPdf() {
@@ -284,178 +305,74 @@ function exportTypeToPdf() {
         ? allElements
         : allElements.filter(e => e.type === currentFilter);
     const cols  = getColumnsForType(currentFilter === "Tous" ? null : currentFilter);
-    const label = currentFilter === "Tous" ? "Tous les éléments" : currentFilter;
-    const fname = currentFilter === "Tous" ? "ifc-tous.pdf" : `ifc-${currentFilter.toLowerCase()}.pdf`;
+    const label = currentFilter === "Tous" ? "All elements" : typeLabel(currentFilter);
+    const fname = currentFilter === "Tous" ? "ifc-all.pdf" : `ifc-${currentFilter.toLowerCase()}.pdf`;
     const { headers, rows } = buildTableData(cols, elems);
-    downloadTablePdf(`Export sélection — ${label}`, headers, rows, fname);
-}
-
-function exportCategoriePdf(types, title, filename) {
-    const elems   = allElements.filter(e => types.includes(e.type));
-    if (!elems.length) { alert("Aucun élément trouvé pour cette catégorie."); return; }
-    const typeName = elems[0].type;
-    const cols   = getColumnsForType(typeName);
-    const { headers, rows } = buildTableData(cols, elems);
-    downloadTablePdf(title, headers, rows, filename);
-}
-
-function exportInertesPdf() {
-    const elems = allElements.filter(e => TYPES_INERTES.includes(e.type));
-    if (!elems.length) { alert("Aucun élément inerte trouvé."); return; }
-
-    const headers = [
-        "Nom/ID", "Type", "Étage", "Matériau",
-        "Hauteur (m)", "Longueur (m)", "Épaisseur (m)",
-        "Volume (m³)", "Densité (kg/m³)", "Masse (kg)"
-    ];
-
-    let totalVol = 0, totalMasse = 0;
-
-    const dataRows = elems.map(e => {
-        const vol   = calcVolume(e);
-        const dens  = getDensite(e.materiau);
-        const masse = vol != null ? Math.round(vol * dens) : null;
-        if (vol   != null) totalVol   += vol;
-        if (masse != null) totalMasse += masse;
-        return [
-            e.nom || e.id || "",
-            e.type || "",
-            e.etage || "",
-            e.materiau || "",
-            e.hauteur ?? "",
-            e.longueur ?? "",
-            e.epaisseur ?? "",
-            vol ?? "",
-            dens,
-            masse ?? "",
-        ].map(v => String(v));
-    });
-
-    const totalVolStr   = String(Math.round(totalVol   * 1000) / 1000);
-    const totalMasseStr = String(totalMasse);
-    const totalRow = ["★ TOTAL", "", "", "", "", "", "", totalVolStr, "", totalMasseStr];
-
-    const rows = [totalRow, ...dataRows, totalRow];
-
-    downloadTablePdf("Éléments Inertes — IFC Analyzer", headers, rows, "ifc-inertes.pdf");
+    downloadTablePdf(`Selection export — ${label}`, headers, rows, fname);
 }
 
 // ============================================================
-// EXPORT JSON
+// ENVOI DIRECT AU TRACKER (sans passer par un fichier JSON)
 // ============================================================
 
-exportJsonBtn.addEventListener("click", () => {
-    const mapped = allElements.map(e => ({
+sendToTrackerBtn.addEventListener("click", async () => {
+    if (!allElements || allElements.length === 0) {
+        alert("Nothing to send. Analyze an IFC file first.");
+        return;
+    }
+
+    const projectName = prompt(
+        "Project name to create in the Tracker:",
+        `IFC Project - ${new Date().toLocaleDateString("en-GB")}`
+    );
+    if (projectName === null) return; // annulé
+
+    const components = allElements.map(e => ({
         id: e.id || null,
         type: e.type || null,
         material: e.materiau || null,
         ifc_location: e.etage || null,
         status: "in_building",
+        hauteur:    e.hauteur    ?? null,
+        longueur:   e.longueur   ?? null,
+        epaisseur:  e.epaisseur  ?? null,
+        net_area:   e.net_area   ?? null,
+        net_volume: e.net_volume ?? null,
     }));
-    const json = JSON.stringify(mapped, null, 2);
-    const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "ifc-elements.json";
-    a.click();
-    URL.revokeObjectURL(url);
-});
 
-// ============================================================
-// RAPPORT PEMD
-// ============================================================
+    const orig = sendToTrackerBtn.innerHTML;
+    sendToTrackerBtn.disabled = true;
+    sendToTrackerBtn.innerHTML = `<i data-lucide="loader-2"></i> Sending…`;
+    if (window.lucide) lucide.createIcons();
 
-exportPemdBtn.addEventListener("click", async () => {
-    exportPemdBtn.disabled = true;
-    exportPemdBtn.textContent = "Génération PEMD...";
     try {
-        const response = await fetch("/api/export-pemd", {
+        const res = await fetch("/api/tracker/import", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                elements: allElements,
-                project_name: "Projet IFC",
+                components,
+                project_name: projectName.trim() || null,
             }),
         });
-        if (!response.ok) {
-            const err = await response.json();
-            alert(`Erreur : ${err.detail || "Export PEMD échoué"}`);
+        if (!res.ok) {
+            let msg = `HTTP ${res.status}`;
+            try { const j = await res.json(); msg = j.detail || msg; } catch {}
+            alert(`Send error: ${msg}`);
             return;
         }
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "diagnostic_pemd_tableau1.pdf";
-        a.click();
-        URL.revokeObjectURL(url);
+        const data = await res.json();
+        const created = data.created ?? components.length;
+        const goTracker = confirm(
+            `✅ Project "${data.project_name}" created with ${created} components.\n\n` +
+            `Open the Tracker now?`
+        );
+        if (goTracker) window.location.href = "/tracker";
     } catch (err) {
-        alert(`Erreur réseau : ${err.message}`);
+        alert(`Network error: ${err.message}`);
     } finally {
-        exportPemdBtn.disabled = false;
-        exportPemdBtn.textContent = "Rapport PEMD";
-    }
-});
-
-// ============================================================
-// BTP MATCH MODAL
-// ============================================================
-
-exportBtpMatchBtn.addEventListener("click", () => {
-    // Remplir le select avec les types disponibles
-    const types = ["Tous", ...new Set(allElements.map(e => e.type))];
-    btpTypeSelect.innerHTML = types.map(t => `<option value="${t}">${t}</option>`).join("");
-    btpMatchModal.classList.remove("hidden");
-    lucide.createIcons();
-});
-
-btpModalCancelBtn.addEventListener("click", () => {
-    btpMatchModal.classList.add("hidden");
-});
-
-btpMatchModal.addEventListener("click", (e) => {
-    if (e.target === btpMatchModal) btpMatchModal.classList.add("hidden");
-});
-
-btpModalExportBtn.addEventListener("click", async () => {
-    const typeName = btpTypeSelect.value;
-    const format = document.querySelector("input[name='btpFormat']:checked").value;
-
-    btpModalExportBtn.disabled = true;
-    btpModalExportBtn.textContent = "Génération...";
-
-    try {
-        const response = await fetch("/api/export-btpmatch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                elements: allElements,
-                type_name: typeName === "Tous" ? null : typeName,
-                format: format,
-            }),
-        });
-
-        if (!response.ok) {
-            const err = await response.json();
-            alert(`Erreur : ${err.detail || "Export échoué"}`);
-            return;
-        }
-
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        const label = typeName === "Tous" ? "tous" : typeName.toLowerCase();
-        a.download = `btpmatch-${label}.${format}`;
-        a.click();
-        URL.revokeObjectURL(url);
-        btpMatchModal.classList.add("hidden");
-    } catch (err) {
-        alert(`Erreur réseau : ${err.message}`);
-    } finally {
-        btpModalExportBtn.disabled = false;
-        btpModalExportBtn.textContent = "Exporter";
+        sendToTrackerBtn.disabled = false;
+        sendToTrackerBtn.innerHTML = orig;
+        if (window.lucide) lucide.createIcons();
     }
 });
 
@@ -503,7 +420,7 @@ uploadCard.addEventListener("drop", (e) => {
         fileInput.files = dt.files;
         handleFileSelected(file);
     } else {
-        alert("Veuillez déposer un fichier .ifc valide.");
+        alert("Please drop a valid .ifc file.");
     }
 });
 
@@ -523,9 +440,9 @@ function handleFileSelected(file) {
  * Formate la taille d'un fichier
  */
 function formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + " o";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " Ko";
-    return (bytes / (1024 * 1024)).toFixed(1) + " Mo";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }
 
 /**
@@ -548,12 +465,21 @@ async function uploadAndAnalyze(file) {
         const data = await response.json();
 
         if (!response.ok) {
-            throw new Error(data.detail || "Erreur lors de l'analyse");
+            throw new Error(data.detail || "Analysis error");
         }
 
         // Stocker les éléments
         allElements = data.elements;
         currentFilter = "Tous";
+
+        // Persister l'extraction pour retrouver les données après navigation (/tracker → /)
+        saveLastExtraction({
+            message: data.message,
+            avertissements: data.avertissements,
+            resume: data.resume,
+            elements: data.elements,
+            saved_at: new Date().toISOString(),
+        });
 
         // Afficher les résultats
         showSuccessMessage(data.message);
@@ -563,8 +489,11 @@ async function uploadAndAnalyze(file) {
         showFilters(data.resume.par_type);
         showTable(allElements);
 
+        // Charger les statuts depuis la DB (async, ne bloque pas)
+        fetchDbStatuses();
+
     } catch (error) {
-        alert(`Erreur : ${error.message}`);
+        alert(`Error: ${error.message}`);
     } finally {
         showLoader(false);
     }
@@ -623,11 +552,11 @@ function showSummary(resume) {
     summaryCards.innerHTML = `
         <div class="stat-card">
             <div class="stat-value">${resume.total}</div>
-            <div class="stat-label">Éléments au total</div>
+            <div class="stat-label">Total elements</div>
         </div>
         <div class="stat-card gray">
             <div class="stat-value">${Object.keys(resume.par_type).length}</div>
-            <div class="stat-label">Types d'éléments</div>
+            <div class="stat-label">Element types</div>
         </div>
     `;
     summarySection.classList.remove("hidden");
@@ -657,7 +586,7 @@ function showTypeCount(parType) {
             const color = typeColors[type] || "#6b7280";
             return `
                 <div class="type-card" style="border-left-color: ${color}">
-                    <span class="type-name">${type}</span>
+                    <span class="type-name">${typeLabel(type)}</span>
                     <span class="type-count" style="background: ${color}">${count}</span>
                 </div>
             `;
@@ -677,7 +606,7 @@ function showFilters(parType) {
         .map(
             (type) =>
                 `<button class="filter-btn ${type === currentFilter ? "active" : ""}" 
-                         data-type="${type}">${type}</button>`
+                         data-type="${type}">${typeLabel(type)}</button>`
         )
         .join("");
 
@@ -699,18 +628,18 @@ function showFilters(parType) {
     filterSection.classList.remove("hidden");
 }
 
-// Colonnes spécifiques par type
+// Colonnes spécifiques par type (clés = valeurs canoniques fr coté backend)
 const TYPE_COLUMNS = {
     "Mur": [
-        { header: "Hauteur (m)", value: e => formatDimension(e.hauteur) },
-        { header: "Longueur (m)", value: e => formatDimension(e.longueur) },
-        { header: "Épaisseur (m)", value: e => formatDimension(e.epaisseur) },
+        { header: "Height (m)", value: e => formatDimension(e.hauteur) },
+        { header: "Length (m)", value: e => formatDimension(e.longueur) },
+        { header: "Thickness (m)", value: e => formatDimension(e.epaisseur) },
         { header: "Volume (m³)", value: e => e.volume != null ? e.volume + " m³" : "" },
     ],
     "Porte": [
-        { header: "Hauteur (m)", value: e => formatDimension(e.hauteur) },
-        { header: "Longueur (m)", value: e => formatDimension(e.longueur) },
-        { header: "Battants", value: e => e.nb_battants != null ? e.nb_battants : "" },
+        { header: "Height (m)", value: e => formatDimension(e.hauteur) },
+        { header: "Length (m)", value: e => formatDimension(e.longueur) },
+        { header: "Leaves", value: e => e.nb_battants != null ? e.nb_battants : "" },
     ],
     "Dalle": [
         { header: "NetArea (m²)", value: e => e.net_area != null ? e.net_area : "" },
@@ -718,28 +647,66 @@ const TYPE_COLUMNS = {
         { header: "Width (m)", value: e => formatDimension(e.epaisseur) },
     ],
     "Escalier": [
-        { header: "Nb Contremarches", value: e => e.number_of_riser != null ? e.number_of_riser : "" },
-        { header: "Nb Marches", value: e => e.number_of_treads != null ? e.number_of_treads : "" },
-        { header: "Long. Marche (m)", value: e => e.tread_length != null ? e.tread_length : "" },
-        { header: "Haut. Contremarche (m)", value: e => e.riser_height != null ? e.riser_height : "" },
+        { header: "Risers", value: e => e.number_of_riser != null ? e.number_of_riser : "" },
+        { header: "Treads", value: e => e.number_of_treads != null ? e.number_of_treads : "" },
+        { header: "Tread length (m)", value: e => e.tread_length != null ? e.tread_length : "" },
+        { header: "Riser height (m)", value: e => e.riser_height != null ? e.riser_height : "" },
     ],
     "Mur rideau": [],
 };
 
 // Colonnes par défaut (pour Tous, Fenêtre, Mur rideau, etc.)
 const DEFAULT_COLUMNS = [
-    { header: "Hauteur (m)", value: e => formatDimension(e.hauteur) },
-    { header: "Longueur (m)", value: e => formatDimension(e.longueur) },
-    { header: "Épaisseur (m)", value: e => formatDimension(e.epaisseur) },
+    { header: "Height (m)", value: e => formatDimension(e.hauteur) },
+    { header: "Length (m)", value: e => formatDimension(e.longueur) },
+    { header: "Thickness (m)", value: e => formatDimension(e.epaisseur) },
     { header: "Volume (m³)", value: e => e.volume != null ? e.volume + " m³" : "" },
 ];
 
+// Statuts DB — badge coloré
+const STATUS_COLORS_MAIN = {
+    "in_building":  { bg: "#dbeafe", color: "#1e40af" },
+    "démonté":       { bg: "#fef3c7", color: "#92400e" },
+    "transporté":    { bg: "#e0e7ff", color: "#3730a3" },
+    "stocké":        { bg: "#fce7f3", color: "#9d174d" },
+    "réutilisé":     { bg: "#d1fae5", color: "#065f46" },
+    "à réutiliser":  { bg: "#d1fae5", color: "#065f46" },
+    "à recycler":    { bg: "#dcfce7", color: "#14532d" },
+};
+
+function getStatusBadge(elementId) {
+    const s = dbStatuses[elementId];
+    if (!s) return `<span style="font-size:.75rem;color:#9ca3af;">—</span>`;
+    const c = STATUS_COLORS_MAIN[s] || { bg: "#f3f4f6", color: "#374151" };
+    return `<span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:.75rem;font-weight:700;background:${c.bg};color:${c.color};white-space:nowrap;">${statusLabel(s)}</span>`;
+}
+
+async function fetchDbStatuses() {
+    const ids = allElements.map(e => e.id).filter(Boolean);
+    if (!ids.length) return;
+    try {
+        const res = await fetch("/api/tracker/statuses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids }),
+        });
+        if (!res.ok) return;
+        dbStatuses = await res.json();
+        // Re-rendre le tableau avec les statuts
+        const visible = currentFilter === "Tous"
+            ? allElements
+            : allElements.filter(e => e.type === currentFilter);
+        showTable(visible);
+    } catch (_) {}
+}
+
 // Colonnes communes à tous les types
 const COMMON_COLUMNS = [
-    { header: "Nom / ID", value: e => `<span title="${e.id}">${e.nom || e.id}</span>` },
-    { header: "Type", value: e => e.type },
-    { header: "Étage", value: e => e.etage || "—" },
-    { header: "Matériau", value: e => e.materiau || "Inconnu" },
+    { header: "Name / ID", value: e => `<span title="${e.id}">${e.nom || e.id}</span>` },
+    { header: "Type", value: e => typeLabel(e.type) },
+    { header: "Floor", value: e => e.etage || "—" },
+    { header: "Material", value: e => e.materiau || "Unknown" },
+    { header: "Status", value: e => getStatusBadge(e.id) },
 ];
 
 function getColumnsForType(typeName) {
@@ -792,11 +759,11 @@ function showTable(elements) {
  */
 function getBadge(value) {
     if (value === "OUI") {
-        return `<span class="badge badge-oui">OUI</span>`;
+        return `<span class="badge badge-oui">YES</span>`;
     } else if (value === "NON") {
-        return `<span class="badge badge-non">NON</span>`;
+        return `<span class="badge badge-non">NO</span>`;
     } else {
-        return `<span class="badge badge-inconnu">INCONNU</span>`;
+        return `<span class="badge badge-inconnu">UNKNOWN</span>`;
     }
 }
 
@@ -860,3 +827,6 @@ function getScoreBar(score) {
 document.addEventListener("DOMContentLoaded", () => {
     lucide.createIcons();
 });
+
+// Restaurer automatiquement la dernière extraction (après définition de toutes les fonctions)
+restoreLastExtractionIfAny();

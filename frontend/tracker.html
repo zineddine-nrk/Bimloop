@@ -1,191 +1,757 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tracker IFC — Suivi des composants</title>
-    <link rel="stylesheet" href="/static/styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>Tracking — IFC Analyzer</title>
+    <link rel="stylesheet" href="/static/assets/design.css?v=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        .tracker-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem; }
-        .tracker-title { font-size:1.5rem; font-weight:700; color:#1e3a5f; display:flex; align-items:center; gap:.5rem; }
-        .stats-row { display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
-        .stat-chip { background:white; border:1px solid #e5e7eb; border-radius:8px; padding:.6rem 1.2rem; font-size:.9rem; font-weight:600; color:#374151; box-shadow:0 1px 3px rgba(0,0,0,.06); }
-        .stat-chip span { color:#2563eb; }
-        .filters-row { display:flex; gap:.75rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center; }
-        .filter-select { padding:.45rem .75rem; border:1px solid #d1d5db; border-radius:6px; font-size:.9rem; background:#f9fafb; outline:none; }
-        .import-btn { background:#2563eb; color:white; border:none; padding:.5rem 1.1rem; border-radius:6px; cursor:pointer; font-size:.9rem; font-weight:600; display:flex; align-items:center; gap:.4rem; }
-        .import-btn:hover { background:#1d4ed8; }
-        .comp-table { width:100%; border-collapse:collapse; background:white; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); }
-        .comp-table th { background:#1e3a5f; color:white; padding:10px 12px; font-size:.85rem; text-align:left; }
-        .comp-table td { padding:9px 12px; font-size:.85rem; color:#374151; border-bottom:1px solid #f3f4f6; }
-        .comp-table tr:hover td { background:#f0f4ff; cursor:pointer; }
-        .badge { display:inline-block; padding:2px 10px; border-radius:20px; font-size:.75rem; font-weight:600; }
-        .badge-in_building { background:#dbeafe; color:#1e40af; }
-        .badge-démonté    { background:#fef3c7; color:#92400e; }
-        .badge-transporté { background:#e0e7ff; color:#3730a3; }
-        .badge-stocké     { background:#fce7f3; color:#9d174d; }
-        .badge-réutilisé  { background:#d1fae5; color:#065f46; }
-        .empty-msg { text-align:center; padding:3rem; color:#9ca3af; font-size:.95rem; }
-        .import-info { font-size:.8rem; color:#6b7280; margin-top:.3rem; }
+        /* Compat anciens noms (utilisés par le JS inline) */
+        .badge-in_building { background: var(--info-50);    color: var(--info-600); }
+        .badge-démonté    { background: var(--warning-50); color: #92400e; }
+        .badge-transporté { background: #e0e7ff;           color: #3730a3; }
+        .badge-stocké     { background: #f3e8ff;           color: #6b21a8; }
+        .badge-réutilisé  { background: var(--success-50); color: var(--success-700); }
+        .badge[class*="badge-"]:not(.badge-neutral):not(.badge-primary):not(.badge-success):not(.badge-warning):not(.badge-danger):not(.badge-info) {
+            display: inline-block; padding: 3px 10px; border-radius: 999px;
+            font-size: 11px; font-weight: 600; letter-spacing: .02em;
+        }
+        .empty-msg { text-align: center; padding: 48px 16px; color: var(--text-muted); font-size: 14px; }
+        .stat-chip {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-base);
+            box-shadow: var(--shadow-xs);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .stat-chip span { color: var(--primary-600); font-weight: 700; }
+        .stats-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+        .filters-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+        .filter-select { padding: 7px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 13px; background: var(--bg-surface); }
+        .filter-select:hover { border-color: var(--border-strong); }
+
+        /* Tableau Tracker */
+        .comp-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: var(--shadow-xs);
+        }
+        .comp-table th {
+            background: var(--slate-50);
+            color: var(--text-muted);
+            padding: 12px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .comp-table td {
+            padding: 11px 14px;
+            font-size: 13px;
+            color: var(--text-base);
+            border-bottom: 1px solid var(--border);
+        }
+        .comp-table tr:last-child td { border-bottom: none; }
+        .comp-table tbody tr { transition: background var(--t-fast); cursor: pointer; }
+        .comp-table tbody tr:hover { background: var(--slate-50); }
+        tr.selected-row { background: var(--primary-50) !important; }
+
+        /* Barre bulk en bas */
+        #bulkBar {
+            display: none;
+            position: fixed;
+            bottom: 24px; left: 50%;
+            transform: translateX(-50%);
+            background: var(--slate-900);
+            color: white;
+            padding: 12px 18px;
+            border-radius: 14px;
+            box-shadow: var(--shadow-lg);
+            z-index: 900;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            max-width: 95vw;
+        }
+        .bulk-btn { color: white; border: none; padding: 7px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; transition: filter var(--t-fast); }
+        .bulk-btn:hover { filter: brightness(1.15); }
+        .row-chk { cursor: pointer; width: 16px; height: 16px; accent-color: var(--primary-600); }
+
+        .import-info { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
     </style>
 </head>
 <body>
-<header class="header">
-    <div class="header-content">
-        <div class="logo"><i data-lucide="scan-line"></i> IFC Analyzer</div>
-        <nav style="display:flex;gap:1rem;">
-            <a href="/" style="color:#93c5fd;text-decoration:none;font-size:.9rem;">← Retour à l'analyseur</a>
-        </nav>
-    </div>
-</header>
 
-<main style="max-width:1100px;margin:2rem auto;padding:0 1.5rem;">
-    <div class="tracker-header">
-        <div class="tracker-title"><i data-lucide="map-pin"></i> Suivi des composants IFC</div>
-        <div style="display:flex;gap:.75rem;align-items:center;">
-            <button class="import-btn" onclick="openImportModal()">
-                <i data-lucide="upload"></i> Importer depuis IFC Analyzer
-            </button>
+<!-- ============ CONTENU PAGE ============ -->
+<div class="fade-in">
+
+    <!-- ====== Toolbar projet ====== -->
+    <div class="card mb-4">
+        <div class="card-body" style="padding: 16px 20px;">
+            <div class="row" style="justify-content: space-between;">
+                <div class="row">
+                    <i data-lucide="folder" style="width:18px;height:18px;color:var(--text-muted);"></i>
+                    <span class="text-muted text-sm">Project:</span>
+                    <select class="select filter-select" id="projectSelect" onchange="onProjectChange()" style="min-width: 280px;">
+                        <option value="">Loading…</option>
+                    </select>
+                </div>
+                <div class="row" style="gap: 6px;">
+                    <button class="btn btn-secondary btn-sm" id="exportIfcBtn" onclick="exportProjectIfc()">
+                        <i data-lucide="file-down"></i> <span id="exportIfcLabel">Export to IFC</span>
+                    </button>
+                    <input type="file" id="projectIfcInput" accept=".ifc" style="display:none;">
+                    <button class="btn btn-secondary btn-sm" id="exportReuseCsvBtn" onclick="openCsvPicker(event)" title="Generate a CSV (PEM or Inert waste)">
+                        <i data-lucide="file-spreadsheet"></i> Export PEMD <i data-lucide="chevron-down" style="width:12px;height:12px;"></i>
+                    </button>
+                    <button class="btn btn-danger btn-sm" id="deleteProjectBtn" onclick="deleteCurrentProject()">
+                        <i data-lucide="trash-2"></i> Delete
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Stats -->
+    <!-- ====== Stats du projet ====== -->
     <div class="stats-row" id="statsRow">
-        <div class="stat-chip">Chargement...</div>
+        <div class="stat-chip">Loading…</div>
     </div>
 
-    <!-- Filtres -->
+    <!-- ====== Filtres ====== -->
     <div class="filters-row">
         <select class="filter-select" id="filterStatus" onchange="loadComponents()">
-            <option value="">Tous les statuts</option>
+            <option value="">All statuses</option>
             <option value="in_building">In building</option>
-            <option value="démonté">Démonté</option>
-            <option value="transporté">Transporté</option>
-            <option value="stocké">Stocké</option>
-            <option value="réutilisé">Réutilisé</option>
+            <option value="démonté">Dismantled</option>
+            <option value="transporté">In transit</option>
+            <option value="stocké">Stored</option>
+            <option value="à réutiliser">To reuse</option>
+            <option value="réutilisé">Reused</option>
+            <option value="à recycler">To recycle</option>
         </select>
         <select class="filter-select" id="filterType" onchange="loadComponents()">
-            <option value="">Tous les types</option>
+            <option value="">All types</option>
         </select>
-        <span id="countLabel" style="font-size:.85rem;color:#6b7280;margin-left:.5rem;"></span>
+        <span id="countLabel" class="text-muted text-sm" style="margin-left: 8px;"></span>
     </div>
 
-    <!-- Tableau -->
+    <!-- ====== Tableau ====== -->
     <table class="comp-table" id="compTable">
         <thead>
             <tr>
-                <th>ID</th><th>Type</th><th>Matériau</th>
-                <th>Emplacement IFC</th><th>Statut</th><th>Mis à jour</th>
+                <th style="width:40px; text-align:center;">
+                    <input type="checkbox" id="selectAllChk" onclick="toggleSelectAll(this)" title="Select all" class="row-chk">
+                </th>
+                <th>ID</th>
+                <th>Type</th>
+                <th>Material</th>
+                <th>IFC location</th>
+                <th>Status</th>
+                <th>Updated</th>
             </tr>
         </thead>
-        <tbody id="compBody"><tr><td colspan="6" class="empty-msg">Chargement...</td></tr></tbody>
+        <tbody id="compBody"><tr><td colspan="7" class="empty-msg">Loading…</td></tr></tbody>
     </table>
-</main>
 
-<!-- Modal import -->
-<div id="importModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;">
-    <div style="background:white;border-radius:12px;padding:2rem;width:480px;max-width:95vw;">
-        <h3 style="margin:0 0 .5rem;color:#1e3a5f;">Importer des composants</h3>
-        <p style="font-size:.9rem;color:#6b7280;margin-bottom:1rem;">
-            Collez le contenu du fichier <code>ifc-elements.json</code> généré par l'onglet "Exporter JSON".
-        </p>
-        <textarea id="jsonPaste" rows="8" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:.5rem;font-size:.8rem;font-family:monospace;resize:vertical;" placeholder='[{"id":"...","type":"Porte","material":"Bois",...}]'></textarea>
-        <p class="import-info" id="importInfo"></p>
-        <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-top:1rem;">
-            <button onclick="closeImportModal()" style="background:#f3f4f6;border:1px solid #d1d5db;padding:.5rem 1.2rem;border-radius:6px;cursor:pointer;">Annuler</button>
-            <button onclick="doImport()" class="import-btn">Importer</button>
-        </div>
-    </div>
 </div>
 
-<footer class="footer"><p>IFC Analyzer — Tracker © 2025</p></footer>
+<!-- ====== Barre d'action bulk ====== -->
+<div id="bulkBar">
+    <span style="font-weight: 600; font-size: 13px;">
+        <span id="bulkCount">0</span> selected
+    </span>
+    <span style="color: var(--slate-400); font-size: 12px;">→ Status:</span>
+    <button class="bulk-btn" onclick="bulkSetStatus('in_building')"  style="background:#1e40af;">In building</button>
+    <button class="bulk-btn" onclick="bulkSetStatus('démonté')"      style="background:#92400e;">Dismantled</button>
+    <button class="bulk-btn" onclick="bulkSetStatus('transporté')"   style="background:#3730a3;">In transit</button>
+    <button class="bulk-btn" onclick="bulkSetStatus('stocké')"       style="background:#9d174d;">Stored</button>
+    <button class="bulk-btn" onclick="bulkSetStatus('à réutiliser')" style="background:#059669;">To reuse</button>
+    <button class="bulk-btn" onclick="bulkSetStatus('réutilisé')"    style="background:#065f46;">Reused</button>
+    <button class="bulk-btn" onclick="bulkSetStatus('à recycler')"   style="background:#b91c1c;">To recycle</button>
+    <span style="border-left: 1px solid var(--slate-700); height: 22px; margin: 0 6px;"></span>
+    <button class="bulk-btn" onclick="openBulkMetaModal()" style="background:#7c3aed;">Info</button>
+    <button onclick="clearSelection()" style="background:var(--slate-700);color:white;border:none;padding:7px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">Cancel</button>
+</div>
 
+<!-- Layout -->
+<script src="/static/assets/layout.js"></script>
 <script>
-lucide.createIcons();
+    AppLayout.mount({
+        active: "tracking",
+        eyebrow: "Workspace",
+        title: "Component tracking",
+    });
+</script>
+
+<!-- Logique métier (inchangée — tous les IDs / fonctions préservés) -->
+<script>
+const LS_PROJECT_KEY = "ifc_analyzer:tracker_project_id";
+let currentProjectId = null;
+
+function setCurrentProjectId(id) {
+    currentProjectId = id ? Number(id) : null;
+    if (currentProjectId) {
+        localStorage.setItem(LS_PROJECT_KEY, String(currentProjectId));
+    } else {
+        localStorage.removeItem(LS_PROJECT_KEY);
+    }
+}
+
+function projectQuery() {
+    return currentProjectId ? `project_id=${currentProjectId}` : "";
+}
+
+async function loadProjects() {
+    const res = await fetch("/api/tracker/projects");
+    const projects = await res.json();
+    const sel = document.getElementById("projectSelect");
+
+    if (!projects.length) {
+        sel.innerHTML = '<option value="">No projects yet — send one from the Extraction page</option>';
+        currentProjectId = null;
+        return;
+    }
+
+    const saved = Number(localStorage.getItem(LS_PROJECT_KEY));
+    const exists = projects.find(p => p.id === saved);
+    if (exists) {
+        currentProjectId = saved;
+    } else {
+        currentProjectId = projects[0].id;
+        setCurrentProjectId(currentProjectId);
+    }
+
+    sel.innerHTML = projects.map(p => {
+        const date = (p.created_at || "").slice(0, 10);
+        return `<option value="${p.id}" ${p.id===currentProjectId?'selected':''}>${p.name} — ${p.component_count} comp. (${date})</option>`;
+    }).join("");
+}
+
+// Affichage anglais des clés canoniques fr stockées en DB
+const STATUS_LABELS_EN = {
+    "in_building":  "In building",
+    "démonté":      "Dismantled",
+    "transporté":   "In transit",
+    "stocké":       "Stored",
+    "réutilisé":    "Reused",
+    "à réutiliser": "To reuse",
+    "à recycler":   "To recycle",
+};
+const TYPE_LABELS_EN = { "Mur":"Wall","Mur rideau":"Curtain wall","Porte":"Door","Fenêtre":"Window","Dalle":"Slab","Escalier":"Stairs","Toiture":"Roof","Inconnu":"Unknown" };
+function stLbl(s){return STATUS_LABELS_EN[s]||s||"—";}
+function tyLbl(t){return TYPE_LABELS_EN[t]||t||"—";}
+
+async function refreshExportIfcLabel() {
+    const labelEl = document.getElementById("exportIfcLabel");
+    if (!currentProjectId) { labelEl.textContent = "Export to IFC"; return; }
+    try {
+        const r = await fetch(`/api/tracker/projects/${currentProjectId}/ifc-info`);
+        if (!r.ok) { labelEl.textContent = "Export to IFC"; return; }
+        const info = await r.json();
+        labelEl.textContent = info.has_ifc ? "Export to IFC" : "Link IFC + Export";
+    } catch { labelEl.textContent = "Export to IFC"; }
+}
+
+async function exportProjectIfc() {
+    if (!currentProjectId) { alert("No project selected."); return; }
+    const infoRes = await fetch(`/api/tracker/projects/${currentProjectId}/ifc-info`);
+    const info = await infoRes.json();
+    if (!info.has_ifc) {
+        alert("First use: select the source IFC file for this project.\nIt will be remembered for future exports.");
+        document.getElementById("projectIfcInput").click();
+        return;
+    }
+    await downloadEnrichedIfc();
+}
+
+document.getElementById("projectIfcInput").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file || !currentProjectId) return;
+    const btn = document.getElementById("exportIfcBtn");
+    const lbl = document.getElementById("exportIfcLabel");
+    const origLbl = lbl.textContent;
+    btn.disabled = true; lbl.textContent = "Uploading…";
+    const fd = new FormData(); fd.append("file", file);
+    try {
+        const res = await fetch(`/api/tracker/projects/${currentProjectId}/ifc`, { method: "POST", body: fd });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(`Upload error: ${err.detail || res.status}`);
+            return;
+        }
+        await downloadEnrichedIfc();
+    } finally {
+        btn.disabled = false;
+        lbl.textContent = origLbl;
+        refreshExportIfcLabel();
+    }
+});
+
+async function downloadEnrichedIfc() {
+    const btn = document.getElementById("exportIfcBtn");
+    const lbl = document.getElementById("exportIfcLabel");
+    const origLbl = lbl.textContent;
+    btn.disabled = true; lbl.textContent = "Generating…";
+    try {
+        const res = await fetch(`/api/tracker/projects/${currentProjectId}/export-ifc`);
+        if (!res.ok) {
+            let msg = `HTTP ${res.status}`;
+            try { const j = await res.json(); msg = j.detail || msg; } catch {}
+            alert(`Export error: ${msg}`);
+            return;
+        }
+        const cd = res.headers.get("Content-Disposition") || "";
+        const m = cd.match(/filename="?([^"]+)"?/);
+        const filename = m ? m[1] : `project_${currentProjectId}.ifc`;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    } finally {
+        btn.disabled = false;
+        lbl.textContent = origLbl;
+    }
+}
+
+function openCsvPicker(event) {
+    event.stopPropagation();
+    if (!currentProjectId) { alert("No project selected."); return; }
+    document.getElementById("csvPickerMenu")?.remove();
+
+    const btn = document.getElementById("exportReuseCsvBtn");
+    const rect = btn.getBoundingClientRect();
+    const menu = document.createElement("div");
+    menu.id = "csvPickerMenu";
+    menu.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${rect.left}px;background:white;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-lg);z-index:1000;min-width:280px;overflow:hidden;animation:slideUp 200ms ease;`;
+    menu.innerHTML = `
+        <button data-kind="pem" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:12px 16px;font-size:13px;cursor:pointer;color:var(--text-strong);">
+            <strong>PEM report</strong>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Products / Equipment / Materials for reuse</div>
+        </button>
+        <div style="height:1px;background:var(--border);"></div>
+        <button data-kind="di" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:12px 16px;font-size:13px;cursor:pointer;color:var(--text-strong);">
+            <strong>DI report (inert waste)</strong>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Concrete, brick, glass, soil… to recycle / reuse</div>
+        </button>`;
+    menu.querySelectorAll("button").forEach(b => {
+        b.addEventListener("mouseenter", () => b.style.background = "var(--slate-50)");
+        b.addEventListener("mouseleave", () => b.style.background = "transparent");
+        b.addEventListener("click", () => {
+            const kind = b.dataset.kind;
+            menu.remove();
+            if (kind === "pem") downloadCsv("export-reuse-csv", `diagnostic_reemploi_projet${currentProjectId}.csv`);
+            else                downloadCsv("export-di-csv",    `dechets_inertes_projet${currentProjectId}.csv`);
+        });
+    });
+    document.body.appendChild(menu);
+    setTimeout(() => {
+        document.addEventListener("click", function once() {
+            menu.remove();
+            document.removeEventListener("click", once);
+        });
+    }, 0);
+}
+
+async function downloadCsv(endpoint, fallbackName) {
+    const btn = document.getElementById("exportReuseCsvBtn");
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2"></i> Generating…`;
+    if (window.lucide) lucide.createIcons();
+    try {
+        const res = await fetch(`/api/tracker/projects/${currentProjectId}/${endpoint}`);
+        if (!res.ok) {
+            let msg = `HTTP ${res.status}`;
+            try { const j = await res.json(); msg = j.detail || msg; } catch {}
+            alert(`CSV export error: ${msg}`);
+            return;
+        }
+        const cd = res.headers.get("Content-Disposition") || "";
+        const m = cd.match(/filename="?([^"]+)"?/);
+        const filename = m ? m[1] : fallbackName;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        if (window.lucide) lucide.createIcons();
+    }
+}
+
+async function deleteCurrentProject() {
+    if (!currentProjectId) {
+        alert("No project selected.");
+        return;
+    }
+    const sel = document.getElementById("projectSelect");
+    const projectLabel = sel.options[sel.selectedIndex]?.text || `Project #${currentProjectId}`;
+    const ok = confirm(
+        `⚠️ Permanently delete the project:\n\n"${projectLabel}"\n\n` +
+        `All its components AND their status history will be erased.\n` +
+        `This action is IRREVERSIBLE.\n\nContinue?`
+    );
+    if (!ok) return;
+
+    const res = await fetch(`/api/tracker/projects/${currentProjectId}`, { method: "DELETE" });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Error: ${err.detail || "Delete failed"}`);
+        return;
+    }
+    const result = await res.json();
+    setCurrentProjectId(null);
+    await loadProjects();
+    const projSel = document.getElementById("projectSelect");
+    if (projSel.options.length && projSel.options[0].value) {
+        setCurrentProjectId(projSel.options[0].value);
+        projSel.value = String(currentProjectId);
+    }
+    await loadStats();
+    await loadComponents();
+    alert(`✅ Project deleted — ${result.components_deleted} component(s) removed.`);
+}
+
+function onProjectChange() {
+    const sel = document.getElementById("projectSelect");
+    setCurrentProjectId(sel.value);
+    loadStats();
+    loadComponents();
+    refreshExportIfcLabel();
+}
 
 async function loadStats() {
-    const res = await fetch("/api/tracker/stats");
+    if (!currentProjectId) {
+        document.getElementById("statsRow").innerHTML =
+            '<div class="stat-chip">No project selected</div>';
+        return;
+    }
+    const res  = await fetch(`/api/tracker/stats?${projectQuery()}`);
     const data = await res.json();
-    const row = document.getElementById("statsRow");
-    const statusLabels = { in_building:"In building", démonté:"Démonté", transporté:"Transporté", stocké:"Stocké", réutilisé:"Réutilisé" };
-    let html = `<div class="stat-chip">Total : <span>${data.total}</span></div>`;
-    for (const [s, n] of Object.entries(data.by_status || {})) {
-        html += `<div class="stat-chip">${statusLabels[s]||s} : <span>${n}</span></div>`;
+    const row  = document.getElementById("statsRow");
+    let html = `<div class="stat-chip">Total: <span>${data.total}</span></div>`;
+    const byStatus = data.by_status || data.par_statut || {};
+    for (const [s, n] of Object.entries(byStatus)) {
+        html += `<div class="stat-chip">${stLbl(s)}: <span>${n}</span></div>`;
     }
     row.innerHTML = html;
 
-    // Remplir le filtre type
     const sel = document.getElementById("filterType");
-    sel.innerHTML = '<option value="">Tous les types</option>';
-    for (const t of Object.keys(data.by_type || {})) {
-        sel.innerHTML += `<option value="${t}">${t}</option>`;
+    sel.innerHTML = '<option value="">All types</option>';
+    const byType = data.by_type || data.par_type || {};
+    for (const t of Object.keys(byType)) {
+        sel.innerHTML += `<option value="${t}">${tyLbl(t)}</option>`;
     }
 }
 
 async function loadComponents() {
+    const body = document.getElementById("compBody");
+    if (!currentProjectId) {
+        body.innerHTML = '<tr><td colspan="7" class="empty-msg">Create a project to get started.</td></tr>';
+        document.getElementById("countLabel").textContent = "";
+        return;
+    }
     const status = document.getElementById("filterStatus").value;
     const type   = document.getElementById("filterType").value;
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ project_id: currentProjectId });
     if (status) params.set("status", status);
     if (type)   params.set("type", type);
 
     const res  = await fetch("/api/tracker/components?" + params);
     const data = await res.json();
-    const body = document.getElementById("compBody");
-    document.getElementById("countLabel").textContent = `${data.length} composant(s)`;
+    document.getElementById("countLabel").textContent = `${data.length} component(s)`;
 
     if (!data.length) {
-        body.innerHTML = '<tr><td colspan="6" class="empty-msg">Aucun composant trouvé.</td></tr>';
+        body.innerHTML = '<tr><td colspan="7" class="empty-msg">No components found.</td></tr>';
+        clearSelection();
         return;
     }
-    body.innerHTML = data.map(c => `
-        <tr onclick="window.location='/tracker/${encodeURIComponent(c.id)}'">
-            <td style="font-family:monospace;font-size:.78rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.id}">${c.id}</td>
-            <td>${c.type||"—"}</td>
+    body.innerHTML = data.map(c => {
+        const escId = c.id.replace(/"/g, '&quot;');
+        const isSel = selectedIds.has(c.id);
+        return `
+        <tr data-id="${escId}" class="${isSel?'selected-row':''}" onclick="rowClick(event, '${c.project_id}', '${encodeURIComponent(c.id)}')">
+            <td style="text-align:center;" onclick="event.stopPropagation()">
+                <input type="checkbox" class="row-chk" data-id="${escId}" ${isSel?'checked':''}
+                       onclick="toggleRowCheck(this, event)">
+            </td>
+            <td class="text-mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.id}">${c.id}</td>
+            <td>${tyLbl(c.type)}</td>
             <td>${c.material||"—"}</td>
-            <td>${c.ifc_location||"—"}</td>
-            <td><span class="badge badge-${c.status}">${c.status}</span></td>
-            <td style="font-size:.78rem;color:#9ca3af;">${(c.updated_at||"").slice(0,16)}</td>
-        </tr>
-    `).join("");
+            <td class="text-muted">${c.ifc_location||"—"}</td>
+            <td><span class="badge badge-${c.status}">${stLbl(c.status)}</span></td>
+            <td class="text-muted text-sm">${(c.updated_at||"").slice(0,16)}</td>
+        </tr>`;
+    }).join("");
+    refreshBulkBar();
 }
 
-function openImportModal() {
-    document.getElementById("importModal").style.display = "flex";
-    document.getElementById("importInfo").textContent = "";
-}
-function closeImportModal() {
-    document.getElementById("importModal").style.display = "none";
+const selectedIds = new Set();
+
+function rowClick(event, projectId, encodedId) {
+    if (event.target.tagName === "INPUT") return;
+    window.location = `/tracker/${projectId}/${encodedId}`;
 }
 
-async function doImport() {
-    const raw = document.getElementById("jsonPaste").value.trim();
-    let components;
-    try { components = JSON.parse(raw); } catch(e) {
-        document.getElementById("importInfo").textContent = "JSON invalide.";
+function toggleRowCheck(checkbox, event) {
+    event.stopPropagation();
+    const id = checkbox.dataset.id;
+    if (checkbox.checked) selectedIds.add(id);
+    else selectedIds.delete(id);
+    const tr = checkbox.closest("tr");
+    if (tr) tr.classList.toggle("selected-row", checkbox.checked);
+    refreshBulkBar();
+    syncSelectAllCheckbox();
+}
+
+function toggleSelectAll(masterChk) {
+    const boxes = document.querySelectorAll(".row-chk");
+    boxes.forEach(b => {
+        if (b === masterChk) return;
+        b.checked = masterChk.checked;
+        const id = b.dataset.id;
+        if (id) {
+            if (masterChk.checked) selectedIds.add(id);
+            else selectedIds.delete(id);
+        }
+        const tr = b.closest("tr");
+        if (tr) tr.classList.toggle("selected-row", masterChk.checked);
+    });
+    refreshBulkBar();
+}
+
+function syncSelectAllCheckbox() {
+    const master = document.getElementById("selectAllChk");
+    const boxes = [...document.querySelectorAll(".row-chk")].filter(b => b !== master);
+    if (!boxes.length) { master.checked = false; master.indeterminate = false; return; }
+    const checked = boxes.filter(b => b.checked).length;
+    master.checked = checked === boxes.length;
+    master.indeterminate = checked > 0 && checked < boxes.length;
+}
+
+function refreshBulkBar() {
+    const bar = document.getElementById("bulkBar");
+    const count = selectedIds.size;
+    document.getElementById("bulkCount").textContent = count;
+    bar.style.display = count > 0 ? "flex" : "none";
+}
+
+function clearSelection() {
+    selectedIds.clear();
+    document.querySelectorAll(".row-chk").forEach(b => { b.checked = false; });
+    document.querySelectorAll("tr.selected-row").forEach(tr => tr.classList.remove("selected-row"));
+    const master = document.getElementById("selectAllChk");
+    if (master) { master.checked = false; master.indeterminate = false; }
+    refreshBulkBar();
+}
+
+// ============ CHANGEMENT DE STATUT EN MASSE ============
+const BULK_STATUS_PROMPTS = {
+    "transporté":   { title: "Destination",         question: "Where were these components transported?", placeholder: "e.g. North warehouse, Lyon" },
+    "stocké":       { title: "Component storage",   question: "Specify the storage reason and location.", placeholder: "e.g. Paris 13 depot, zone B", withReason: true },
+    "à réutiliser": { title: "Reuse location",       question: "Where will these components be reused?",   placeholder: "e.g. Jules Ferry school site" },
+    "à recycler":   { title: "Recycling location",   question: "Where will these components be recycled?", placeholder: "e.g. SUEZ sorting center" },
+};
+const STORAGE_REASONS = [
+    { value: "en attente de réutilisation",      label: "♻️ Pending reuse" },
+    { value: "en attente de recyclage",          label: "🔄 Pending recycling" },
+    { value: "en attente d'évacuation (déchet)", label: "🗑️ Pending disposal (waste)" },
+    { value: "stockage temporaire",              label: "⏳ Temporary storage (undefined)" },
+];
+
+function bulkSetStatus(newStatus) {
+    if (selectedIds.size === 0) return;
+    const prompt = BULK_STATUS_PROMPTS[newStatus];
+    if (!prompt) {
+        if (!confirm(`Change the status of ${selectedIds.size} component(s) to "${stLbl(newStatus)}"?`)) return;
+        submitBulkStatus(newStatus, null);
         return;
     }
-    if (!Array.isArray(components)) {
-        document.getElementById("importInfo").textContent = "Le JSON doit être un tableau.";
+    openBulkLocationModal(newStatus, prompt);
+}
+
+function openBulkLocationModal(newStatus, prompt) {
+    document.getElementById("bulkLocModal")?.remove();
+    const reasonHtml = prompt.withReason ? `
+        <label class="form-label">Storage reason</label>
+        <select id="bulkReasonInput" class="select" style="margin-bottom:12px;">
+            ${STORAGE_REASONS.map(r => `<option value="${r.value}">${r.label}</option>`).join("")}
+        </select>
+        <label class="form-label">Storage location</label>
+    ` : "";
+    const overlay = document.createElement("div");
+    overlay.id = "bulkLocModal";
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="modal-header"><h3 class="modal-title"><i data-lucide="map-pin"></i> ${prompt.title}</h3></div>
+            <div class="modal-body">
+                <p class="text-muted text-sm mb-4">
+                    ${prompt.question}<br>
+                    <strong>${selectedIds.size} component(s)</strong> selected will receive the same status.
+                </p>
+                ${reasonHtml}
+                <input type="text" id="bulkLocInput" class="input" placeholder="${prompt.placeholder}" autocomplete="off">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="document.getElementById('bulkLocModal').remove()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmBulkLocation('${newStatus}', ${!!prompt.withReason})">Confirm</button>
+            </div>
+        </div>`;
+    overlay.addEventListener("click", () => overlay.remove());
+    document.body.appendChild(overlay);
+    if (window.lucide) lucide.createIcons();
+    const input = document.getElementById("bulkLocInput");
+    input.focus();
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") confirmBulkLocation(newStatus, !!prompt.withReason);
+        if (e.key === "Escape") overlay.remove();
+    });
+}
+
+function confirmBulkLocation(newStatus, withReason) {
+    const lieu = document.getElementById("bulkLocInput").value.trim();
+    if (!lieu) {
+        document.getElementById("bulkLocInput").style.borderColor = "var(--danger-500)";
         return;
     }
-    const res = await fetch("/api/tracker/import", {
+    let note = `Location: ${lieu}`;
+    if (withReason) {
+        const reason = document.getElementById("bulkReasonInput").value;
+        note = `${reason} — Location: ${lieu}`;
+    }
+    document.getElementById("bulkLocModal").remove();
+    submitBulkStatus(newStatus, note);
+}
+
+async function submitBulkStatus(newStatus, note) {
+    const ids = [...selectedIds];
+    const res = await fetch("/api/tracker/components/bulk-status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ components }),
+        body: JSON.stringify({ ids, status: newStatus, note }),
     });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Error: ${err.detail || "update failed"}`);
+        return;
+    }
     const result = await res.json();
-    document.getElementById("importInfo").textContent =
-        `✅ ${result.created} créé(s), ${result.updated} mis à jour.`;
+    let msg = `✅ ${result.updated} component(s) updated to "${stLbl(newStatus)}".`;
+    if (result.failed) msg += `\n⚠️ ${result.failed} failure(s).`;
+    alert(msg);
+    clearSelection();
     await loadStats();
     await loadComponents();
-    setTimeout(closeImportModal, 1500);
 }
 
-loadStats();
-loadComponents();
+// ============ BULK META ============
+const BULK_CONDITIONS = ["Neuf", "Bon", "Moyen", "Mauvais"];
+const BULK_AGES = ["Inférieur à 2 ans", "Entre 2 et 10 ans", "Entre 10 et 50 ans", "Supérieur à 50 ans"];
+
+function openBulkMetaModal() {
+    if (selectedIds.size === 0) return;
+    document.getElementById("bulkMetaModal")?.remove();
+    const overlay = document.createElement("div");
+    overlay.id = "bulkMetaModal";
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+        <div class="modal-box" onclick="event.stopPropagation()">
+            <div class="modal-header"><h3 class="modal-title"><i data-lucide="clipboard-list"></i> Condition & info</h3></div>
+            <div class="modal-body">
+                <p class="text-muted text-sm mb-4">
+                    <strong>${selectedIds.size} component(s)</strong> selected will receive these values.<br>
+                    Leave "Don't change" to keep the existing value.
+                </p>
+                <div class="form-field mb-4">
+                    <label class="form-label">Condition / working state</label>
+                    <select id="bulkMetaCondition" class="select">
+                        <option value="__none__">— Don't change —</option>
+                        <option value="Neuf">New</option>
+                        <option value="Bon">Good</option>
+                        <option value="Moyen">Fair</option>
+                        <option value="Mauvais">Poor</option>
+                        <option value="">(Clear value)</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label class="form-label">Estimated age</label>
+                    <select id="bulkMetaAge" class="select">
+                        <option value="__none__">— Don't change —</option>
+                        <option value="Inférieur à 2 ans">Under 2 years</option>
+                        <option value="Entre 2 et 10 ans">2–10 years</option>
+                        <option value="Entre 10 et 50 ans">10–50 years</option>
+                        <option value="Supérieur à 50 ans">Over 50 years</option>
+                        <option value="">(Clear value)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="document.getElementById('bulkMetaModal').remove()">Cancel</button>
+                <button class="btn btn-primary" onclick="submitBulkMeta()"><i data-lucide="check"></i> Apply</button>
+            </div>
+        </div>`;
+    overlay.addEventListener("click", () => overlay.remove());
+    document.body.appendChild(overlay);
+    if (window.lucide) lucide.createIcons();
+}
+
+async function submitBulkMeta() {
+    const condSel = document.getElementById("bulkMetaCondition").value;
+    const ageSel  = document.getElementById("bulkMetaAge").value;
+    const payload = { ids: [...selectedIds] };
+    if (condSel !== "__none__") payload.condition = condSel;
+    if (ageSel  !== "__none__") payload.age_estimated = ageSel;
+    if (payload.condition === undefined && payload.age_estimated === undefined) {
+        alert("Select at least one field to update.");
+        return;
+    }
+    const res = await fetch("/api/tracker/components/bulk-meta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Error: ${err.detail || "update failed"}`);
+        return;
+    }
+    const result = await res.json();
+    let msg = `✅ ${result.updated} component(s) updated.`;
+    if (result.failed) msg += `\n⚠️ ${result.failed} failure(s).`;
+    document.getElementById("bulkMetaModal")?.remove();
+    alert(msg);
+    clearSelection();
+    await loadStats();
+    await loadComponents();
+}
+
+(async () => {
+    await loadProjects();
+    await loadStats();
+    await loadComponents();
+    refreshExportIfcLabel();
+})();
 </script>
+
 </body>
 </html>

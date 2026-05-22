@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Viewer — IFC Analyzer</title>
+    <link rel="stylesheet" href="/static/viewer3d/styles.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Importmap : three depuis esm.sh (ESM natif fiable) ;
+         web-ifc + web-ifc-three depuis jsdelivr `/+esm` qui convertit
+         proprement les CJS Node en ESM browser (pas de require('fs')). -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://esm.sh/three@0.149.0",
+        "three/": "https://esm.sh/three@0.149.0/",
+        "three/examples/jsm/controls/OrbitControls.js": "https://esm.sh/three@0.149.0/examples/jsm/controls/OrbitControls.js",
+        "three/examples/jsm/utils/BufferGeometryUtils": "https://esm.sh/three@0.149.0/examples/jsm/utils/BufferGeometryUtils.js",
+        "three/examples/jsm/utils/BufferGeometryUtils.js": "https://esm.sh/three@0.149.0/examples/jsm/utils/BufferGeometryUtils.js",
+        "web-ifc-three": "https://cdn.jsdelivr.net/npm/web-ifc-three@0.0.125/+esm",
+        "web-ifc": "https://cdn.jsdelivr.net/npm/web-ifc@0.0.44/+esm"
+      }
+    }
+    </script>
+</head>
+<body>
+    <header class="v3d-header">
+        <div class="v3d-header-left">
+            <a href="/" class="v3d-back" title="Back to extraction">
+                <i data-lucide="arrow-left"></i>
+            </a>
+            <h1>
+                <i data-lucide="box"></i>
+                3D Viewer
+            </h1>
+        </div>
+        <div class="v3d-header-right">
+            <select id="projectSelect" class="v3d-select">
+                <option value="">— Select a project —</option>
+            </select>
+            <label class="v3d-upload-btn" title="Load an IFC from your disk">
+                <i data-lucide="upload"></i> File
+                <input type="file" id="localIfcInput" accept=".ifc" hidden>
+            </label>
+            <a href="/" class="v3d-link" title="Extraction"><i data-lucide="file-search" style="width:16px;height:16px;vertical-align:middle;"></i></a>
+            <a href="/tracker" class="v3d-link" title="Tracking"><i data-lucide="map-pin" style="width:16px;height:16px;vertical-align:middle;"></i></a>
+        </div>
+    </header>
+
+    <main class="v3d-main">
+        <!-- Sidebar gauche : filtres + recherche + légende -->
+        <aside class="v3d-sidebar">
+            <section class="v3d-section">
+                <h3><i data-lucide="search"></i> Search</h3>
+                <input type="text" id="searchInput" placeholder="Component name or ID…" class="v3d-input">
+                <ul id="searchResults" class="v3d-search-results"></ul>
+            </section>
+
+            <section class="v3d-section">
+                <h3><i data-lucide="filter"></i> Category filters</h3>
+                <div id="categoryFilters" class="v3d-chip-row">
+                    <button class="v3d-chip active" data-cat="all">All</button>
+                    <button class="v3d-chip" data-cat="walls">Walls</button>
+                    <button class="v3d-chip" data-cat="doors">Doors</button>
+                    <button class="v3d-chip" data-cat="windows">Windows</button>
+                    <button class="v3d-chip" data-cat="slabs">Slabs</button>
+                </div>
+            </section>
+
+            <section class="v3d-section">
+                <h3><i data-lucide="palette"></i> Color by status</h3>
+                <label class="v3d-toggle">
+                    <input type="checkbox" id="colorByStatusToggle" checked>
+                    <span>Enable</span>
+                </label>
+                <ul class="v3d-legend">
+                    <li><span class="v3d-dot" style="background:#9ca3af"></span> In building</li>
+                    <li><span class="v3d-dot" style="background:#f97316"></span> Dismantled</li>
+                    <li><span class="v3d-dot" style="background:#3b82f6"></span> In transit</li>
+                    <li><span class="v3d-dot" style="background:#a855f7"></span> Stored</li>
+                    <li><span class="v3d-dot" style="background:#10b981"></span> To reuse / Reused</li>
+                    <li><span class="v3d-dot" style="background:#ef4444"></span> To recycle</li>
+                </ul>
+            </section>
+        </aside>
+
+        <!-- Zone 3D centrale -->
+        <div class="v3d-canvas-wrap">
+            <canvas id="threeCanvas"></canvas>
+
+            <!-- Overlay de chargement -->
+            <div id="loadingOverlay" class="v3d-overlay hidden">
+                <div class="v3d-spinner"></div>
+                <p id="loadingText">Loading IFC…</p>
+            </div>
+
+            <!-- État vide -->
+            <div id="emptyState" class="v3d-empty">
+                <i data-lucide="box-select"></i>
+                <h2>No model loaded</h2>
+                <p>Select a project from the Tracker, or load an IFC file from your disk.</p>
+            </div>
+
+            <!-- Toolbar inférieure -->
+            <div class="v3d-toolbar">
+                <button id="resetCamBtn" title="Reset camera"><i data-lucide="maximize"></i></button>
+                <button id="toggleWireframeBtn" title="Wireframe"><i data-lucide="grid-3x3"></i></button>
+                <button id="toggleClipBtn" title="Section plane"><i data-lucide="scissors"></i></button>
+                <span id="modelInfo" class="v3d-model-info"></span>
+            </div>
+        </div>
+
+        <!-- Sidebar droite : détails -->
+        <aside class="v3d-details" id="detailsPanel">
+            <div class="v3d-details-empty">
+                <i data-lucide="mouse-pointer-click"></i>
+                <p>Click an object to see its details.</p>
+            </div>
+        </aside>
+    </main>
+
+    <script type="module">
+    // Essaye de charger le module principal et affiche toute erreur
+    // directement dans l'overlay de l'état vide.
+    try {
+        await import("/static/viewer3d/main.js");
+    } catch (err) {
+        console.error("[viewer3d] init failed:", err);
+        const empty = document.getElementById("emptyState");
+        if (empty) {
+            empty.innerHTML = `
+                <i data-lucide="alert-triangle" style="color:#ef4444;"></i>
+                <h2 style="color:#ef4444;">Failed to load the viewer</h2>
+                <p style="max-width:480px;">${(err?.message || err).toString().replace(/</g,"&lt;")}</p>
+                <p style="margin-top:1rem;font-size:.8rem;color:#64748b;">
+                    Check your internet connection (esm.sh / unpkg CDNs).
+                    Details in the console (F12).
+                </p>`;
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+    </script>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Détail composant — Tracker IFC</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem; }
+        @media(max-width:700px){ .detail-grid{grid-template-columns:1fr;} }
+        .card { background:white; border-radius:10px; padding:1.5rem; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+        .card-title { font-size:1rem; font-weight:700; color:#1e3a5f; margin-bottom:1rem; display:flex; align-items:center; gap:.4rem; }
+        .info-row { display:flex; justify-content:space-between; padding:.5rem 0; border-bottom:1px solid #f3f4f6; font-size:.9rem; }
+        .info-row:last-child { border:none; }
+        .info-label { color:#6b7280; }
+        .info-value { font-weight:600; color:#374151; }
+        .badge { display:inline-block; padding:3px 12px; border-radius:20px; font-size:.8rem; font-weight:700; }
+        .badge { display:inline-block; padding:4px 14px; border-radius:20px; font-size:.85rem; font-weight:700; }
+        .badge-in_building   { background:#dbeafe; color:#1e40af; }
+        .badge-démonté       { background:#fef3c7; color:#92400e; }
+        .badge-transporté    { background:#e0e7ff; color:#3730a3; }
+        .badge-stocké        { background:#fce7f3; color:#9d174d; }
+        .badge-réutilisé     { background:#d1fae5; color:#065f46; }
+        .badge-à\ réutiliser { background:#d1fae5; color:#065f46; }
+        .badge-à\ recycler   { background:#dcfce7; color:#14532d; }
+        .status-btn { padding:.55rem 1.1rem; border:none; border-radius:8px; cursor:pointer; font-size:.88rem; font-weight:600; transition:all .15s; }
+        .status-btn-in_building   { background:#dbeafe; color:#1e40af; }
+        .status-btn-démonté       { background:#fef3c7; color:#92400e; }
+        .status-btn-transporté    { background:#e0e7ff; color:#3730a3; }
+        .status-btn-stocké        { background:#fce7f3; color:#9d174d; }
+        .status-btn-réutilisé     { background:#d1fae5; color:#065f46; }
+        .status-btn-à\ réutiliser { background:#d1fae5; color:#065f46; }
+        .status-btn-à\ recycler   { background:#dcfce7; color:#14532d; }
+        .status-btn:hover { filter:brightness(.92); transform:scale(1.03); }
+        .status-btn.active { box-shadow:0 0 0 3px #2563eb; }
+
+        /* ── Carte statut ── */
+        .status-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 1px 6px rgba(0,0,0,.1);
+            margin-bottom: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+        }
+        .status-card-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: .8rem;
+        }
+        .status-card-label {
+            font-size: .8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: #6b7280;
+        }
+        .status-big-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: .5rem;
+            padding: .5rem 1.4rem;
+            border-radius: 999px;
+            font-size: 1.05rem;
+            font-weight: 700;
+        }
+        /* Modal lieu */
+        .loc-modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(15,23,42,.55);
+            display: none;
+            align-items: center; justify-content: center;
+            z-index: 9999;
+        }
+        .loc-modal-overlay.show { display: flex; }
+        .loc-modal {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem 1.8rem;
+            width: 90%; max-width: 440px;
+            box-shadow: 0 10px 40px rgba(0,0,0,.25);
+            animation: popIn .18s ease-out;
+        }
+        @keyframes popIn { from { transform: scale(.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .loc-modal h3 { font-size: 1.1rem; font-weight: 700; color:#1e3a5f; margin-bottom:.3rem; display:flex; align-items:center; gap:.5rem; }
+        .loc-modal p  { font-size:.88rem; color:#6b7280; margin-bottom: 1rem; }
+        .loc-modal input {
+            width: 100%; border: 1px solid #d1d5db; border-radius:8px;
+            padding:.7rem .9rem; font-size:.95rem; outline:none;
+            transition: border .15s;
+        }
+        .loc-modal input:focus { border-color:#2563eb; box-shadow: 0 0 0 3px #bfdbfe; }
+        .loc-modal-actions { display:flex; gap:.6rem; justify-content:flex-end; margin-top: 1.2rem; }
+        .loc-modal-actions button {
+            padding:.55rem 1.1rem; border:none; border-radius:8px;
+            font-weight:600; font-size:.88rem; cursor:pointer; transition:all .12s;
+        }
+        .btn-cancel  { background:#f3f4f6; color:#374151; }
+        .btn-confirm { background:#2563eb; color:white; }
+        .btn-cancel:hover  { background:#e5e7eb; }
+        .btn-confirm:hover { background:#1d4ed8; }
+        .history-row { display:flex; gap:1rem; align-items:flex-start; padding:.6rem 0; border-bottom:1px solid #f3f4f6; font-size:.85rem; }
+        .history-row:last-child { border:none; }
+        .history-dot { width:10px; height:10px; border-radius:50%; margin-top:4px; flex-shrink:0; }
+        .history-time { color:#9ca3af; white-space:nowrap; }
+        .qr-img { max-width:160px; border-radius:8px; border:1px solid #e5e7eb; margin-top:.5rem; }
+        .note-input { width:100%; border:1px solid #d1d5db; border-radius:6px; padding:.4rem .6rem; font-size:.85rem; margin-top:.5rem; outline:none; }
+        .note-input:focus { border-color:#2563eb; }
+        .back-link { color:#2563eb; text-decoration:none; font-size:.9rem; display:flex; align-items:center; gap:.3rem; margin-bottom:1rem; }
+        .back-link:hover { text-decoration:underline; }
+    </style>
+</head>
+<body>
+<header class="header">
+    <div class="header-content">
+        <div class="logo"><i data-lucide="scan-line"></i> IFC Analyzer</div>
+        <nav>
+            <a href="/tracker" style="color:#93c5fd;text-decoration:none;font-size:.9rem;">← Retour au tracker</a>
+        </nav>
+    </div>
+</header>
+
+<main style="max-width:900px;margin:2rem auto;padding:0 1.5rem;" id="main">
+    <a href="/tracker" class="back-link"><i data-lucide="arrow-left" style="width:16px;height:16px;"></i> Tous les composants</a>
+    <div id="content"><p style="color:#9ca3af;">Chargement...</p></div>
+</main>
+
+<footer class="footer"><p>IFC Analyzer — Tracker © 2025</p></footer>
+
+<script>
+lucide.createIcons();
+
+// URL : /tracker/{project_id}/{component_id} OU /tracker/{component_id} (legacy)
+const _pathParts = window.location.pathname.replace(/^\/tracker\//, "").split("/");
+let projectId = null;
+let componentId = "";
+if (_pathParts.length >= 2 && /^\d+$/.test(_pathParts[0])) {
+    projectId = Number(_pathParts[0]);
+    componentId = decodeURIComponent(_pathParts.slice(1).join("/"));
+} else {
+    componentId = decodeURIComponent(_pathParts.join("/"));
+}
+const STATUS_COLORS = {
+    "in_building":    "#1e40af",
+    "démonté":        "#92400e",
+    "transporté":     "#3730a3",
+    "stocké":         "#9d174d",
+    "réutilisé":      "#065f46",
+    "à réutiliser":   "#065f46",
+    "à recycler":     "#14532d",
+};
+const STATUS_BG = {
+    "in_building":    "#dbeafe",
+    "démonté":        "#fef3c7",
+    "transporté":     "#e0e7ff",
+    "stocké":         "#fce7f3",
+    "réutilisé":      "#d1fae5",
+    "à réutiliser":   "#d1fae5",
+    "à recycler":     "#dcfce7",
+};
+const STATUS_ICONS = {
+    "in_building":    "🏗️",
+    "démonté":        "🔨",
+    "transporté":     "🚚",
+    "stocké":         "📦",
+    "réutilisé":      "♻️",
+    "à réutiliser":   "♻️",
+    "à recycler":     "🔄",
+};
+const STATUTS = ["in_building", "démonté", "transporté", "stocké", "à réutiliser", "à recycler"];
+
+async function load() {
+    const res = await fetch(`/api/tracker/component/${encodeURIComponent(componentId)}`);
+    if (!res.ok) {
+        document.getElementById("content").innerHTML = '<p style="color:#dc2626;">Composant introuvable.</p>';
+        return;
+    }
+    const comp = await res.json();
+    render(comp);
+}
+
+function render(comp) {
+    const history = comp.history || [];
+    document.title = `${comp.type || comp.id} — Tracker IFC`;
+
+    document.getElementById("content").innerHTML = `
+    <h2 style="font-size:1.4rem;font-weight:700;color:#1e3a5f;margin-bottom:1.2rem;">
+        ${comp.type || "Composant"} — <span style="font-size:1rem;font-weight:400;font-family:monospace;">${comp.id}</span>
+    </h2>
+
+    <!-- CARTE STATUT -->
+    <div class="status-card">
+        <div class="status-card-top">
+            <div>
+                <div class="status-card-label">État actuel du composant</div>
+                <div class="status-big-badge" style="background:${STATUS_BG[comp.status]||'#f3f4f6'};color:${STATUS_COLORS[comp.status]||'#374151'};margin-top:.4rem;">
+                    <span>${STATUS_ICONS[comp.status] || "📌"}</span>
+                    ${comp.status}
+                </div>
+            </div>
+            <div style="text-align:right;font-size:.82rem;color:#6b7280;">
+                Mis à jour le<br>
+                <strong style="color:#374151;">${(comp.updated_at||"—").slice(0,16)}</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="detail-grid">
+        <!-- Informations -->
+        <div class="card">
+            <div class="card-title"><i data-lucide="info" style="width:16px;height:16px;"></i> Informations</div>
+            <div class="info-row"><span class="info-label">Type</span><span class="info-value">${comp.type||"—"}</span></div>
+            <div class="info-row"><span class="info-label">Matériau</span><span class="info-value">${comp.material||"—"}</span></div>
+            <div class="info-row"><span class="info-label">Emplacement IFC</span><span class="info-value">${comp.ifc_location||"—"}</span></div>
+            <div class="info-row"><span class="info-label">Statut actuel</span>
+                <span class="badge badge-${comp.status}">${comp.status}</span>
+            </div>
+            <div class="info-row"><span class="info-label">Importé le</span><span class="info-value">${(comp.created_at||"").slice(0,16)}</span></div>
+            <div class="info-row"><span class="info-label">Mis à jour</span><span class="info-value">${(comp.updated_at||"").slice(0,16)}</span></div>
+        </div>
+
+        <!-- QR Code -->
+        <div class="card">
+            <div class="card-title"><i data-lucide="qr-code" style="width:16px;height:16px;"></i> QR Code</div>
+            <p style="font-size:.85rem;color:#6b7280;margin-bottom:.5rem;">Scanner pour accéder à cette fiche.</p>
+            <img src="/api/tracker/component/${encodeURIComponent(comp.id)}/qr" class="qr-img" alt="QR Code">
+            <br>
+            <a href="/api/tracker/component/${encodeURIComponent(comp.id)}/qr" download="qr-${comp.id}.png"
+               style="font-size:.82rem;color:#2563eb;display:inline-flex;align-items:center;gap:.3rem;margin-top:.5rem;">
+                <i data-lucide="download" style="width:13px;height:13px;"></i> Télécharger PNG
+            </a>
+        </div>
+    </div>
+
+    <!-- Changer le statut -->
+    <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-title"><i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> Changer le statut</div>
+        <p style="font-size:.82rem;color:#6b7280;margin-bottom:.8rem;">Cliquez sur le nouveau statut — un lieu vous sera demandé si nécessaire.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:.5rem;">
+            ${STATUTS.map(s => `
+                <button class="status-btn status-btn-${s} ${comp.status===s?'active':''}"
+                    onclick="handleStatusClick('${s}')">
+                    ${STATUS_ICONS[s]||""} ${s}
+                </button>
+            `).join("")}
+        </div>
+        <p id="statusMsg" style="font-size:.82rem;margin-top:.4rem;color:#059669;"></p>
+    </div>
+
+    <!-- État & informations -->
+    <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-title"><i data-lucide="clipboard-list" style="width:16px;height:16px;"></i> État &amp; informations du composant</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div>
+                <label style="display:block;font-size:.82rem;color:#374151;font-weight:600;margin-bottom:.3rem;">État du composant</label>
+                <select id="metaCondition" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:.5rem .7rem;font-size:.9rem;background:white;">
+                    <option value="">— Non défini —</option>
+                    <option value="Neuf"    ${comp.condition==="Neuf"?"selected":""}>✨ Neuf</option>
+                    <option value="Bon"     ${comp.condition==="Bon"?"selected":""}>� Bon</option>
+                    <option value="Moyen"   ${comp.condition==="Moyen"?"selected":""}>� Moyen</option>
+                    <option value="Mauvais" ${comp.condition==="Mauvais"?"selected":""}>🔴 Mauvais</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:.82rem;color:#374151;font-weight:600;margin-bottom:.3rem;">Âge estimé</label>
+                <select id="metaAge" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:.5rem .7rem;font-size:.9rem;background:white;">
+                    <option value="">— Non défini —</option>
+                    <option value="Inférieur à 2 ans"    ${comp.age_estimated==="Inférieur à 2 ans"?"selected":""}>Inférieur à 2 ans</option>
+                    <option value="Entre 2 et 10 ans"    ${comp.age_estimated==="Entre 2 et 10 ans"?"selected":""}>Entre 2 et 10 ans</option>
+                    <option value="Entre 10 et 50 ans"   ${comp.age_estimated==="Entre 10 et 50 ans"?"selected":""}>Entre 10 et 50 ans</option>
+                    <option value="Supérieur à 50 ans"   ${comp.age_estimated==="Supérieur à 50 ans"?"selected":""}>Supérieur à 50 ans</option>
+                </select>
+                <p style="font-size:.72rem;color:#9ca3af;margin-top:.2rem;">Laisser vide si inconnu.</p>
+            </div>
+        </div>
+        <div style="margin-top:.6rem;">
+            <label style="display:block;font-size:.82rem;color:#374151;font-weight:600;margin-bottom:.3rem;">Commentaire</label>
+            <textarea id="metaComment" rows="3" placeholder="Notes libres : défauts, particularités, contexte d'utilisation..."
+                style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:.5rem .7rem;font-size:.9rem;font-family:inherit;resize:vertical;">${comp.comment ?? ""}</textarea>
+        </div>
+        <div style="display:flex;gap:.6rem;align-items:center;margin-top:.8rem;">
+            <button onclick="saveMeta()" style="background:#2563eb;color:white;border:none;padding:.5rem 1.2rem;border-radius:6px;cursor:pointer;font-size:.88rem;font-weight:600;">
+                Enregistrer les informations
+            </button>
+            <span id="metaMsg" style="font-size:.82rem;"></span>
+        </div>
+    </div>
+
+    <!-- Historique -->
+    <div class="card">
+        <div class="card-title"><i data-lucide="clock" style="width:16px;height:16px;"></i> Historique des statuts</div>
+        ${history.length === 0
+            ? '<p style="color:#9ca3af;font-size:.85rem;">Aucun historique.</p>'
+            : history.map(h => `
+            <div class="history-row">
+                <div class="history-dot" style="background:${STATUS_COLORS[h.new_status]||'#9ca3af'};"></div>
+                <div style="flex:1;">
+                    <span style="font-weight:600;">${h.new_status}</span>
+                    ${h.old_status ? `<span style="color:#9ca3af;"> ← ${h.old_status}</span>` : ""}
+                    ${h.note ? `<div style="color:#6b7280;font-size:.8rem;margin-top:2px;">${h.note}</div>` : ""}
+                </div>
+                <div class="history-time">${(h.changed_at||"").slice(0,16)}</div>
+            </div>`).join("")
+        }
+    </div>
+    `;
+    lucide.createIcons();
+}
+
+// Statuts nécessitant la saisie d'un lieu
+const STATUS_PROMPTS = {
+    "transporté":   { title: "Lieu de destination",  question: "Où le composant a-t-il été transporté ?",  placeholder: "Ex : Entrepôt Nord, Lyon" },
+    "stocké":       { title: "Stockage du composant", question: "Précisez la raison et le lieu du stockage.", placeholder: "Ex : Dépôt Paris 13, zone B", withReason: true },
+    "à réutiliser": { title: "Lieu de réutilisation", question: "Où le composant sera-t-il réutilisé ?",    placeholder: "Ex : Chantier École Jules Ferry" },
+    "à recycler":   { title: "Lieu de recyclage",    question: "Où le composant sera-t-il recyclé ?",       placeholder: "Ex : Centre de tri SUEZ Gennevilliers" },
+};
+
+const STORAGE_REASONS = [
+    { value: "en attente de réutilisation",     label: "♻️ En attente de réutilisation" },
+    { value: "en attente de recyclage",         label: "🔄 En attente de recyclage" },
+    { value: "en attente d'évacuation (déchet)", label: "🗑️ En attente d'évacuation (déchet)" },
+    { value: "stockage temporaire",             label: "⏳ Stockage temporaire (indéterminé)" },
+];
+
+function handleStatusClick(newStatus) {
+    const prompt = STATUS_PROMPTS[newStatus];
+    if (!prompt) {
+        // Pas de lieu demandé (in_building, démonté, réutilisé)
+        submitStatus(newStatus, null);
+        return;
+    }
+    openLocationModal(newStatus, prompt);
+}
+
+function openLocationModal(newStatus, prompt) {
+    const existing = document.getElementById("locModal");
+    if (existing) existing.remove();
+
+    const reasonHtml = prompt.withReason ? `
+        <label style="display:block;font-size:.82rem;color:#374151;font-weight:600;margin:.4rem 0 .3rem;">Raison du stockage</label>
+        <select id="reasonInput" style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:.6rem .8rem;font-size:.92rem;background:white;">
+            ${STORAGE_REASONS.map(r => `<option value="${r.value}">${r.label}</option>`).join("")}
+        </select>
+        <label style="display:block;font-size:.82rem;color:#374151;font-weight:600;margin:.8rem 0 .3rem;">Lieu de stockage</label>
+    ` : "";
+
+    const modal = document.createElement("div");
+    modal.id = "locModal";
+    modal.className = "loc-modal-overlay show";
+    modal.innerHTML = `
+        <div class="loc-modal" onclick="event.stopPropagation()">
+            <h3>${STATUS_ICONS[newStatus]||""} ${prompt.title}</h3>
+            <p>${prompt.question}</p>
+            ${reasonHtml}
+            <input type="text" id="locInput" placeholder="${prompt.placeholder}" autocomplete="off">
+            <div class="loc-modal-actions">
+                <button class="btn-cancel"  onclick="closeLocationModal()">Annuler</button>
+                <button class="btn-confirm" onclick="confirmLocation('${newStatus}', ${prompt.withReason?'true':'false'})">Valider</button>
+            </div>
+        </div>`;
+    modal.addEventListener("click", closeLocationModal);
+    document.body.appendChild(modal);
+    const input = document.getElementById("locInput");
+    input.focus();
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter")  confirmLocation(newStatus, !!prompt.withReason);
+        if (e.key === "Escape") closeLocationModal();
+    });
+}
+
+function closeLocationModal() {
+    const m = document.getElementById("locModal");
+    if (m) m.remove();
+}
+
+function confirmLocation(newStatus, withReason) {
+    const lieu = document.getElementById("locInput").value.trim();
+    if (!lieu) {
+        document.getElementById("locInput").style.borderColor = "#dc2626";
+        return;
+    }
+    let note = `Lieu : ${lieu}`;
+    if (withReason) {
+        const reason = document.getElementById("reasonInput").value;
+        note = `${reason} — Lieu : ${lieu}`;
+    }
+    closeLocationModal();
+    submitStatus(newStatus, note);
+}
+
+async function saveMeta() {
+    const condition = document.getElementById("metaCondition").value || null;
+    const age       = document.getElementById("metaAge").value || null;
+    const comment   = document.getElementById("metaComment").value;
+    const msg = document.getElementById("metaMsg");
+    msg.textContent = "Enregistrement...";
+    msg.style.color = "#6b7280";
+
+    const res = await fetch(`/api/tracker/component/${encodeURIComponent(componentId)}/meta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            condition,
+            age_estimated: age,
+            comment: comment,
+        }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        msg.textContent = `❌ ${err.detail || "Erreur d'enregistrement"}`;
+        msg.style.color = "#dc2626";
+        return;
+    }
+    msg.textContent = "✅ Informations enregistrées.";
+    msg.style.color = "#059669";
+    setTimeout(() => { msg.textContent = ""; }, 2500);
+}
+
+async function submitStatus(newStatus, note) {
+    const res = await fetch(`/api/tracker/component/${encodeURIComponent(componentId)}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus, note: note || null }),
+    });
+    const msg = document.getElementById("statusMsg");
+    if (!res.ok) {
+        const err = await res.json();
+        msg.textContent = `Erreur : ${err.detail}`;
+        msg.style.color = "#dc2626";
+        return;
+    }
+    msg.textContent = `✅ Statut mis à jour → ${newStatus}${note ? " (" + note + ")" : ""}`;
+    msg.style.color = "#059669";
+    setTimeout(load, 600);
+}
+
+load();
+</script>
+</body>
+</html>
