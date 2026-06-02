@@ -6,7 +6,7 @@ Gère l'upload, le traitement et le renvoi des résultats.
 import os
 import shutil
 import tempfile
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +27,8 @@ from tracker import (
 from ifc_exporter import export_ifc_with_statuses
 from reuse_csv import generate_reuse_csv
 from di_csv import generate_di_csv
+from btp_match_pdf import generate_btp_match_pdf
+from extraction_pemd_pdf import generate_extraction_pemd_pdf, generate_extraction_pemd_csv
 
 
 # Initialisation de l'application FastAPI
@@ -131,6 +133,40 @@ class TablePdfRequest(BaseModel):
     headers: List[str]
     rows: List[List[str]]
     filename: Optional[str] = "export.pdf"
+
+
+class ExtractionPemdRequest(BaseModel):
+    elements: List[Dict[str, Any]]
+    format: str = "pdf"
+    project_label: Optional[str] = ""
+
+
+@app.post("/api/export-pemd-extraction")
+async def export_pemd_extraction(req: ExtractionPemdRequest):
+    """Export PEMD (PDF ou CSV) de tous les composants depuis la page Extraction."""
+    from datetime import datetime
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    try:
+        if req.format == "csv":
+            content = generate_extraction_pemd_csv(req.elements)
+            filename = f"pemd_extraction_{date_str}.csv"
+            return Response(
+                content=content,
+                media_type="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        else:
+            content = generate_extraction_pemd_pdf(req.elements, req.project_label or "")
+            filename = f"pemd_extraction_{date_str}.pdf"
+            return Response(
+                content=content,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+    except Exception as e:
+        import traceback
+        print("[export-pemd-extraction] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur export PEMD : {type(e).__name__} — {e}")
 
 
 @app.post("/api/export-table-pdf")
@@ -268,6 +304,29 @@ async def tracker_export_di_csv(project_id: int):
     return Response(
         content=csv_bytes,
         media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/tracker/projects/{project_id}/export-btp-match-pdf")
+async def tracker_export_btp_match_pdf(project_id: int):
+    """Exporte un PDF BTP Match pour les composants « à réutiliser »."""
+    if not get_project(project_id):
+        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    try:
+        pdf_bytes = generate_btp_match_pdf(project_id)
+    except Exception as e:
+        import traceback
+        print("[export-btp-match-pdf] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Échec de la génération PDF BTP Match : {type(e).__name__} — {e}",
+        )
+    from datetime import datetime
+    filename = f"btp_match_projet{project_id}_{datetime.now().strftime('%Y-%m-%d')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

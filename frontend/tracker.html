@@ -119,6 +119,9 @@
                     <button class="btn btn-secondary btn-sm" id="exportReuseCsvBtn" onclick="openCsvPicker(event)" title="Generate a CSV (PEM or Inert waste)">
                         <i data-lucide="file-spreadsheet"></i> Export PEMD <i data-lucide="chevron-down" style="width:12px;height:12px;"></i>
                     </button>
+                    <button class="btn btn-secondary btn-sm" id="exportBtpMatchBtn" onclick="downloadBtpMatchPdf()" title="Generate a BTP Match PDF report">
+                        <i data-lucide="file-text"></i> BTP Match Export
+                    </button>
                     <button class="btn btn-danger btn-sm" id="deleteProjectBtn" onclick="deleteCurrentProject()">
                         <i data-lucide="trash-2"></i> Delete
                     </button>
@@ -367,6 +370,36 @@ function openCsvPicker(event) {
             document.removeEventListener("click", once);
         });
     }, 0);
+}
+
+async function downloadBtpMatchPdf() {
+    if (!currentProjectId) { alert("No project selected."); return; }
+    const btn = document.getElementById("exportBtpMatchBtn");
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2"></i> Generating…`;
+    if (window.lucide) lucide.createIcons();
+    try {
+        const res = await fetch(`/api/tracker/projects/${currentProjectId}/export-btp-match-pdf`);
+        if (!res.ok) {
+            let msg = `HTTP ${res.status}`;
+            try { const j = await res.json(); msg = j.detail || msg; } catch {}
+            alert(`BTP Match export error: ${msg}`);
+            return;
+        }
+        const cd = res.headers.get("Content-Disposition") || "";
+        const m = cd.match(/filename="?([^"]+)"?/);
+        const filename = m ? m[1] : `btp_match_projet${currentProjectId}.pdf`;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        if (window.lucide) lucide.createIcons();
+    }
 }
 
 async function downloadCsv(endpoint, fallbackName) {
