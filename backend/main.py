@@ -7,7 +7,7 @@ import os
 import shutil
 import tempfile
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
@@ -23,12 +23,16 @@ from tracker import (
     list_projects, create_project, get_project, delete_project,
     update_component_meta, CONDITIONS_VALIDES, AGES_VALIDES,
     set_project_ifc, get_project_ifc,
+    project_belongs_to_user, component_belongs_to_user,
 )
 from ifc_exporter import export_ifc_with_statuses
 from reuse_csv import generate_reuse_csv
 from di_csv import generate_di_csv
 from btp_match_pdf import generate_btp_match_pdf
 from extraction_pemd_pdf import generate_extraction_pemd_pdf, generate_extraction_pemd_csv
+from auth_db import init_auth_db
+from auth_routes import auth_router
+from auth_security import get_current_user
 
 
 # Initialisation de l'application FastAPI
@@ -38,6 +42,8 @@ app = FastAPI(
     version="1.0.0",
 )
 
+protected_api = APIRouter(prefix="/api", dependencies=[Depends(get_current_user)])
+
 # Configuration CORS pour permettre les requêtes du frontend
 app.add_middleware(
     CORSMiddleware,
@@ -46,6 +52,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def startup_auth():
+    init_auth_db()
 
 # Dossier pour les fichiers uploadés
 UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "ifc_uploads")
@@ -65,7 +76,13 @@ async def serve_frontend():
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
-@app.post("/api/upload")
+@app.get("/login")
+async def login_page():
+    """Sert la page de connexion."""
+    return FileResponse(os.path.join(FRONTEND_DIR, "login.html"))
+
+
+@protected_api.post("/upload")
 async def upload_ifc(file: UploadFile = File(...)):
     """
     Endpoint pour uploader et analyser un fichier IFC.
@@ -141,7 +158,7 @@ class ExtractionPemdRequest(BaseModel):
     project_label: Optional[str] = ""
 
 
-@app.post("/api/export-pemd-extraction")
+@protected_api.post("/export-pemd-extraction")
 async def export_pemd_extraction(req: ExtractionPemdRequest):
     """Export PEMD (PDF ou CSV) de tous les composants depuis la page Extraction."""
     from datetime import datetime
@@ -169,7 +186,7 @@ async def export_pemd_extraction(req: ExtractionPemdRequest):
         raise HTTPException(status_code=500, detail=f"Erreur export PEMD : {type(e).__name__} — {e}")
 
 
-@app.post("/api/export-table-pdf")
+@protected_api.post("/export-table-pdf")
 async def export_table_pdf(req: TablePdfRequest):
     pdf_bytes = generate_table_pdf(req.title, req.headers, req.rows)
     return Response(
@@ -209,31 +226,41 @@ class BulkMetaUpdateRequest(BaseModel):
     comment: Optional[str] = None
 
 
+def _verify_ownership(project_id: int, user_id: int):
+    """Lève HTTP 404 si le projet n'existe pas ou n'appartient pas à l'utilisateur."""
+    if not project_belongs_to_user(project_id, user_id):
+        raise HTTPException(status_code=404, detail="Projet introuvable.")
+
+
+def _verify_component_ownership(component_id: str, user_id: int):
+    """Lève HTTP 404 si le composant n'existe pas ou n'appartient pas à l'utilisateur."""
+    if not component_belongs_to_user(component_id, user_id):
+        raise HTTPException(status_code=404, detail="Composant introuvable.")
+
+
 class StatusesRequest(BaseModel):
     ids: List[str]
     project_id: Optional[int] = None
 
 
 # ---- Projets ----
-@app.get("/api/tracker/projects")
-async def tracker_projects():
+@protected_api.get("/tracker/projects")
+async def tracker_projects(current_user=Depends(get_current_user)):
     """Liste de tous les projets (avec compte de composants)."""
-    return list_projects()
+    return list_projects(user_id=current_user.id)
 
 
-@app.delete("/api/tracker/projects/{project_id}")
-async def tracker_delete_project(project_id: int):
+@protected_api.delete("/tracker/projects/{project_id}")
+async def tracker_delete_project(project_id: int, current_user=Depends(get_current_user)):
     """Supprime un projet, ses composants et leur historique."""
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    _verify_ownership(project_id, current_user.id)
     return {"success": True, **delete_project(project_id)}
 
 
-@app.post("/api/tracker/projects/{project_id}/ifc")
-async def tracker_upload_project_ifc(project_id: int, file: UploadFile = File(...)):
+@protected_api.post("/tracker/projects/{project_id}/ifc")
+async def tracker_upload_project_ifc(project_id: int, file: UploadFile = File(...), current_user=Depends(get_current_user)):
     """Stocke le fichier IFC d'origine d'un projet (à uploader une seule fois)."""
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    _verify_ownership(project_id, current_user.id)
     if not file.filename.lower().endswith(".ifc"):
         raise HTTPException(status_code=400, detail="Le fichier doit être au format .ifc")
     content = await file.read()
@@ -241,11 +268,10 @@ async def tracker_upload_project_ifc(project_id: int, file: UploadFile = File(..
     return {"success": True, **info}
 
 
-@app.get("/api/tracker/projects/{project_id}/ifc-info")
-async def tracker_project_ifc_info(project_id: int):
+@protected_api.get("/tracker/projects/{project_id}/ifc-info")
+async def tracker_project_ifc_info(project_id: int, current_user=Depends(get_current_user)):
     """Indique si un IFC source est stocké pour ce projet."""
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    _verify_ownership(project_id, current_user.id)
     info = get_project_ifc(project_id)
     return {"has_ifc": info is not None, "filename": info["filename"] if info else None}
 
@@ -261,11 +287,10 @@ def _build_export_filename(original: str) -> str:
     return f"{base}_{datetime.now().strftime('%Y-%m-%d')}.ifc"
 
 
-@app.get("/api/tracker/projects/{project_id}/export-reuse-csv")
-async def tracker_export_reuse_csv(project_id: int):
+@protected_api.get("/tracker/projects/{project_id}/export-reuse-csv")
+async def tracker_export_reuse_csv(project_id: int, current_user=Depends(get_current_user)):
     """Exporte un CSV de diagnostic réemploi pour les composants « à réutiliser »."""
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    _verify_ownership(project_id, current_user.id)
     try:
         csv_bytes = generate_reuse_csv(project_id)
     except Exception as e:
@@ -284,12 +309,11 @@ async def tracker_export_reuse_csv(project_id: int):
     )
 
 
-@app.get("/api/tracker/projects/{project_id}/export-di-csv")
-async def tracker_export_di_csv(project_id: int):
+@protected_api.get("/tracker/projects/{project_id}/export-di-csv")
+async def tracker_export_di_csv(project_id: int, current_user=Depends(get_current_user)):
     """Exporte un CSV « Déchets inertes » pour les composants à recycler / à réutiliser
     appartenant aux catégories DI réglementaires (béton, briques, verre, etc.)."""
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    _verify_ownership(project_id, current_user.id)
     try:
         csv_bytes = generate_di_csv(project_id)
     except Exception as e:
@@ -308,11 +332,10 @@ async def tracker_export_di_csv(project_id: int):
     )
 
 
-@app.get("/api/tracker/projects/{project_id}/export-btp-match-pdf")
-async def tracker_export_btp_match_pdf(project_id: int):
+@protected_api.get("/tracker/projects/{project_id}/export-btp-match-pdf")
+async def tracker_export_btp_match_pdf(project_id: int, current_user=Depends(get_current_user)):
     """Exporte un PDF BTP Match pour les composants « à réutiliser »."""
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    _verify_ownership(project_id, current_user.id)
     try:
         pdf_bytes = generate_btp_match_pdf(project_id)
     except Exception as e:
@@ -331,11 +354,10 @@ async def tracker_export_btp_match_pdf(project_id: int):
     )
 
 
-@app.get("/api/tracker/projects/{project_id}/export-ifc")
-async def tracker_export_project_ifc(project_id: int):
+@protected_api.get("/tracker/projects/{project_id}/export-ifc")
+async def tracker_export_project_ifc(project_id: int, current_user=Depends(get_current_user)):
     """Génère et télécharge l'IFC enrichi à partir du fichier source stocké."""
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    _verify_ownership(project_id, current_user.id)
     info = get_project_ifc(project_id)
     if not info:
         raise HTTPException(
@@ -359,43 +381,50 @@ async def tracker_export_project_ifc(project_id: int):
     )
 
 
-@app.post("/api/tracker/statuses")
-async def tracker_statuses(req: StatusesRequest):
+@protected_api.post("/tracker/statuses")
+async def tracker_statuses(req: StatusesRequest, current_user=Depends(get_current_user)):
     """Retourne {id: status} pour une liste d'IDs IFC (colonne Statut du tableau)."""
+    if req.project_id is not None:
+        _verify_ownership(req.project_id, current_user.id)
     return get_statuses_by_ids(req.ids, project_id=req.project_id)
 
 
-@app.post("/api/tracker/import")
-async def tracker_import(req: ImportRequest):
+@protected_api.post("/tracker/import")
+async def tracker_import(req: ImportRequest, current_user=Depends(get_current_user)):
     """Crée un nouveau projet et y importe les composants."""
-    result = import_components(req.components, project_name=req.project_name)
+    result = import_components(req.components, project_name=req.project_name, user_id=current_user.id)
     return {"success": True, **result}
 
 
-@app.get("/api/tracker/components")
+@protected_api.get("/tracker/components")
 async def tracker_list(
     project_id: Optional[int] = None,
     status: Optional[str] = None,
     type: Optional[str] = None,
+    current_user=Depends(get_current_user),
 ):
     """Liste les composants (filtre obligatoire par projet recommandé)."""
+    if project_id is not None:
+        _verify_ownership(project_id, current_user.id)
     return get_all_components(
         project_id=project_id, status_filter=status, type_filter=type
     )
 
 
-@app.get("/api/tracker/component/{component_id}")
-async def tracker_detail(component_id: str):
+@protected_api.get("/tracker/component/{component_id}")
+async def tracker_detail(component_id: str, current_user=Depends(get_current_user)):
     """Détail d'un composant avec son historique de statuts."""
+    _verify_component_ownership(component_id, current_user.id)
     comp = get_component(component_id)
     if not comp:
         raise HTTPException(status_code=404, detail="Composant introuvable.")
     return comp
 
 
-@app.post("/api/tracker/component/{component_id}/status")
-async def tracker_update_status(component_id: str, req: StatusUpdateRequest):
+@protected_api.post("/tracker/component/{component_id}/status")
+async def tracker_update_status(component_id: str, req: StatusUpdateRequest, current_user=Depends(get_current_user)):
     """Met à jour le statut d'un composant."""
+    _verify_component_ownership(component_id, current_user.id)
     try:
         result = update_status(component_id, req.status, req.note)
     except KeyError:
@@ -405,8 +434,8 @@ async def tracker_update_status(component_id: str, req: StatusUpdateRequest):
     return result
 
 
-@app.post("/api/tracker/components/bulk-status")
-async def tracker_bulk_update_status(req: BulkStatusUpdateRequest):
+@protected_api.post("/tracker/components/bulk-status")
+async def tracker_bulk_update_status(req: BulkStatusUpdateRequest, current_user=Depends(get_current_user)):
     """Change le statut de plusieurs composants en une seule requête."""
     if not req.ids:
         raise HTTPException(status_code=400, detail="Aucun composant sélectionné.")
@@ -418,6 +447,9 @@ async def tracker_bulk_update_status(req: BulkStatusUpdateRequest):
     updated, errors = [], []
     for cid in req.ids:
         try:
+            if not component_belongs_to_user(cid, current_user.id):
+                errors.append({"id": cid, "error": "accès interdit"})
+                continue
             update_status(cid, req.status, req.note)
             updated.append(cid)
         except KeyError:
@@ -427,9 +459,10 @@ async def tracker_bulk_update_status(req: BulkStatusUpdateRequest):
     return {"updated": len(updated), "failed": len(errors), "errors": errors}
 
 
-@app.get("/api/tracker/component/{component_id}/qr")
-async def tracker_qr(component_id: str, request: Request):
+@protected_api.get("/tracker/component/{component_id}/qr")
+async def tracker_qr(component_id: str, request: Request, current_user=Depends(get_current_user)):
     """Génère un QR code PNG pointant vers la page détail du composant."""
+    _verify_component_ownership(component_id, current_user.id)
     comp = get_component(component_id)
     if not comp:
         raise HTTPException(status_code=404, detail="Composant introuvable.")
@@ -440,33 +473,36 @@ async def tracker_qr(component_id: str, request: Request):
     return Response(content=png_bytes, media_type="image/png")
 
 
-@app.get("/api/tracker/stats")
-async def tracker_stats(project_id: Optional[int] = None):
+@protected_api.get("/tracker/stats")
+async def tracker_stats(project_id: Optional[int] = None, current_user=Depends(get_current_user)):
     """Statistiques (filtrables par projet)."""
+    if project_id is not None:
+        _verify_ownership(project_id, current_user.id)
     return get_stats(project_id=project_id)
 
 
-@app.get("/api/tracker/statuts")
+@protected_api.get("/tracker/statuts")
 async def tracker_statuts():
     """Liste des statuts valides."""
     return STATUTS_VALIDES
 
 
-@app.get("/api/tracker/conditions")
+@protected_api.get("/tracker/conditions")
 async def tracker_conditions():
     """Liste des états (conditions) valides."""
     return CONDITIONS_VALIDES
 
 
-@app.get("/api/tracker/ages")
+@protected_api.get("/tracker/ages")
 async def tracker_ages():
     """Liste des âges estimés valides."""
     return AGES_VALIDES
 
 
-@app.post("/api/tracker/component/{component_id}/meta")
-async def tracker_update_meta(component_id: str, req: MetaUpdateRequest):
+@protected_api.post("/tracker/component/{component_id}/meta")
+async def tracker_update_meta(component_id: str, req: MetaUpdateRequest, current_user=Depends(get_current_user)):
     """Met à jour les métadonnées du composant (condition, commentaire, durée de vie, âge estimé)."""
+    _verify_component_ownership(component_id, current_user.id)
     try:
         return update_component_meta(
             component_id,
@@ -481,8 +517,8 @@ async def tracker_update_meta(component_id: str, req: MetaUpdateRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/tracker/components/bulk-meta")
-async def tracker_bulk_update_meta(req: BulkMetaUpdateRequest):
+@protected_api.post("/tracker/components/bulk-meta")
+async def tracker_bulk_update_meta(req: BulkMetaUpdateRequest, current_user=Depends(get_current_user)):
     """Met à jour la condition et/ou l'âge estimé pour plusieurs composants à la fois."""
     if not req.ids:
         raise HTTPException(status_code=400, detail="Aucun composant sélectionné.")
@@ -491,6 +527,9 @@ async def tracker_bulk_update_meta(req: BulkMetaUpdateRequest):
     updated, errors = [], []
     for cid in req.ids:
         try:
+            if not component_belongs_to_user(cid, current_user.id):
+                errors.append({"id": cid, "error": "accès interdit"})
+                continue
             update_component_meta(
                 cid,
                 condition=req.condition,
@@ -578,11 +617,10 @@ async def viewer3d_jsdelivr_proxy(path: str):
     return _serve_wasm_asset(filename)
 
 
-@app.get("/api/tracker/projects/{project_id}/ifc-raw")
-async def tracker_project_ifc_raw(project_id: int):
+@protected_api.get("/tracker/projects/{project_id}/ifc-raw")
+async def tracker_project_ifc_raw(project_id: int, current_user=Depends(get_current_user)):
     """Sert le fichier IFC source brut (pour le viewer 3D)."""
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    _verify_ownership(project_id, current_user.id)
     info = get_project_ifc(project_id)
     if not info or not os.path.exists(info["path"]):
         raise HTTPException(
@@ -604,6 +642,10 @@ async def tracker_detail_page_with_project(project_id: int, component_id: str):
 @app.get("/tracker/{component_id}")
 async def tracker_detail_page(component_id: str):
     return FileResponse(os.path.join(FRONTEND_DIR, "tracker_detail.html"))
+
+
+app.include_router(auth_router)
+app.include_router(protected_api)
 
 
 @app.get("/api/health")

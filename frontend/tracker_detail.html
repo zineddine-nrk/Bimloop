@@ -169,6 +169,7 @@
 </div>
 
 <!-- Layout -->
+<script src="/static/auth.js?v=1"></script>
 <script src="/static/assets/layout.js"></script>
 <script>
     AppLayout.mount({
@@ -307,9 +308,9 @@ function render(comp) {
             </div>
             <div class="card-body" style="text-align:center;">
                 <p class="text-muted text-sm mb-4">Scan to open this component sheet.</p>
-                <img src="/api/tracker/component/${encodeURIComponent(comp.id)}/qr" class="qr-img" alt="QR Code">
+                <img id="qrImage" class="qr-img" alt="QR Code">
                 <div style="margin-top:12px;">
-                    <a href="/api/tracker/component/${encodeURIComponent(comp.id)}/qr" download="qr-${comp.id}.png" class="btn btn-ghost btn-sm">
+                    <a id="qrDownload" href="#" download="qr-${comp.id}.png" class="btn btn-ghost btn-sm">
                         <i data-lucide="download"></i> Download PNG
                     </a>
                 </div>
@@ -401,6 +402,30 @@ function render(comp) {
     </div>
     `;
     if (window.lucide) lucide.createIcons();
+    loadQrImage(comp.id);
+}
+
+let qrObjectUrl = null;
+async function loadQrImage(componentId) {
+    const img = document.getElementById("qrImage");
+    const link = document.getElementById("qrDownload");
+    if (!img || !link) return;
+    try {
+        const res = await fetch(`/api/tracker/component/${encodeURIComponent(componentId)}/qr`);
+        if (!res.ok) {
+            throw new Error("QR fetch failed.");
+        }
+        const blob = await res.blob();
+        if (qrObjectUrl) {
+            URL.revokeObjectURL(qrObjectUrl);
+        }
+        qrObjectUrl = URL.createObjectURL(blob);
+        img.src = qrObjectUrl;
+        link.href = qrObjectUrl;
+    } catch (err) {
+        img.alt = "QR Code unavailable";
+        link.classList.add("hidden");
+    }
 }
 
 const STATUS_PROMPTS = {

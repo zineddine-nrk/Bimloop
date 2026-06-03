@@ -240,9 +240,70 @@ img, svg { display: block; max-width: 100%; }
 .app-sidebar-footer {
     padding: var(--space-3) var(--space-4) var(--space-4);
     border-top: 1px solid var(--border);
+}
+
+.app-sidebar-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.app-sidebar-user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--primary-100);
+    color: var(--primary-600);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.app-sidebar-user-avatar i {
+    width: 16px;
+    height: 16px;
+}
+
+.app-sidebar-user-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.app-sidebar-user-email {
     font-size: 12px;
-    color: var(--text-faint);
-    text-align: center;
+    font-weight: 500;
+    color: var(--text-base);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.app-sidebar-user-logout {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+}
+
+.app-sidebar-user-logout:hover {
+    background: var(--danger-50);
+    color: var(--danger-600);
+}
+
+.app-sidebar-user-logout i {
+    width: 16px;
+    height: 16px;
 }
 
 /* ----- Topbar ----- */

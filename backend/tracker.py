@@ -103,6 +103,12 @@ def init_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_components_project ON components(project_id)"
         )
+
+        # Migration user_id (après l'éventuelle création du projet legacy)
+        proj_cols = [r[1] for r in conn.execute("PRAGMA table_info(projects)").fetchall()]
+        if "user_id" not in proj_cols:
+            conn.execute("ALTER TABLE projects ADD COLUMN user_id INTEGER")
+        conn.execute("UPDATE projects SET user_id = 1 WHERE user_id IS NULL")
         conn.commit()
 
 
@@ -110,28 +116,35 @@ def init_db():
 # PROJETS
 # ============================================================
 
-def create_project(name: str) -> int:
+def create_project(name: str, user_id: int) -> int:
     """Crée un nouveau projet et retourne son id."""
     init_db()
     name = (name or "").strip() or f"Projet du {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.execute("INSERT INTO projects (name) VALUES (?)", (name,))
+        cur = conn.execute(
+            "INSERT INTO projects (name, user_id) VALUES (?, ?)", (name, user_id)
+        )
         conn.commit()
         return cur.lastrowid
 
 
-def list_projects() -> List[Dict]:
-    """Liste les projets avec le nombre de composants de chacun."""
+def list_projects(user_id: Optional[int] = None) -> List[Dict]:
+    """Liste les projets avec le nombre de composants de chacun.
+    Si user_id est fourni, filtre sur cet utilisateur."""
     init_db()
     with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.execute("""
-            SELECT p.id, p.name, p.created_at,
+        query = """
+            SELECT p.id, p.name, p.created_at, p.user_id,
                    COUNT(c.id) AS component_count
             FROM projects p
             LEFT JOIN components c ON c.project_id = p.id
-            GROUP BY p.id
-            ORDER BY p.created_at DESC
-        """)
+        """
+        params = []
+        if user_id is not None:
+            query += " WHERE p.user_id = ?"
+            params.append(user_id)
+        query += " GROUP BY p.id ORDER BY p.created_at DESC"
+        cur = conn.execute(query, params)
         return [_row_to_dict(r, cur) for r in cur.fetchall()]
 
 
@@ -218,7 +231,8 @@ def delete_project(project_id: int) -> Dict[str, int]:
 # ============================================================
 
 def import_components(components: List[Dict],
-                     project_name: Optional[str] = None) -> Dict[str, Any]:
+                     project_name: Optional[str] = None,
+                     user_id: Optional[int] = None) -> Dict[str, Any]:
     """
     Crée un NOUVEAU projet et y importe les composants.
     Si un composant avec le même IFC id existe déjà dans la base (autre projet),
@@ -228,7 +242,9 @@ def import_components(components: List[Dict],
     Retourne {project_id, project_name, created, updated}.
     """
     init_db()
-    project_id = create_project(project_name)
+    if user_id is None:
+        raise ValueError("user_id est requis pour la création d'un projet.")
+    project_id = create_project(project_name, user_id)
     created = 0
     skipped = 0
     with sqlite3.connect(DB_PATH) as conn:
@@ -523,6 +539,42 @@ def generate_qr_png(component_id: str, base_url: str,
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+# ============================================================
+# VÉRIFICATION PROPRIÉTÉ UTILISATEUR
+# ============================================================
+
+def project_belongs_to_user(project_id: int, user_id: int) -> bool:
+    """Vérifie qu'un projet appartient à l'utilisateur donné."""
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT user_id FROM projects WHERE id = ?", (project_id,)
+        ).fetchone()
+        return row is not None and row[0] == user_id
+
+
+def component_belongs_to_user(component_id: str, user_id: int) -> bool:
+    """Vérifie qu'un composant appartient (via son projet) à l'utilisateur donné."""
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("""
+            SELECT p.user_id FROM projects p
+            JOIN components c ON c.project_id = p.id
+            WHERE c.id = ?
+        """, (component_id,)).fetchone()
+        return row is not None and row[0] == user_id
+
+
+def get_component_project_id(component_id: str) -> Optional[int]:
+    """Retourne le project_id du composant, ou None."""
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT project_id FROM components WHERE id = ?", (component_id,)
+        ).fetchone()
+        return row[0] if row else None
 
 
 # ============================================================

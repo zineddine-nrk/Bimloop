@@ -29,6 +29,21 @@
         { key: "settings",   label: "Settings",     icon: "settings",         href: "/settings" },
     ];
 
+    function userSectionHtml() {
+        return `
+            <div class="app-sidebar-user" id="appSidebarUser">
+                <div class="app-sidebar-user-avatar">
+                    <i data-lucide="user"></i>
+                </div>
+                <div class="app-sidebar-user-info">
+                    <span class="app-sidebar-user-email" id="appUserEmail">...</span>
+                </div>
+                <button class="app-sidebar-user-logout" id="appLogoutBtn" title="Déconnexion">
+                    <i data-lucide="log-out"></i>
+                </button>
+            </div>`;
+    }
+
     function navHtml(items, activeKey) {
         return items.map(item => `
             <a href="${item.href}" class="app-nav-link ${item.key === activeKey ? "is-active" : ""}" data-nav="${item.key}">
@@ -58,7 +73,7 @@
                 ${navHtml(NAV_BOTTOM, activeKey)}
             </nav>
             <div class="app-sidebar-footer">
-                © 2025 IFC Analyzer
+                ${userSectionHtml()}
             </div>
         </aside>`;
     }
@@ -130,6 +145,34 @@
 
         // Refresh icons Lucide si dispo
         if (window.lucide) window.lucide.createIcons();
+
+        // Charger infos utilisateur
+        fetchUserInfo();
+
+        // Brancher le bouton logout
+        setupLogout();
+    }
+
+    async function fetchUserInfo() {
+        try {
+            const res = await fetch("/api/auth/me");
+            if (!res.ok) return;
+            const user = await res.json();
+            const emailEl = document.getElementById("appUserEmail");
+            if (emailEl) {
+                emailEl.textContent = user.email;
+                emailEl.title = user.role === "admin" ? "Admin" : "Utilisateur";
+            }
+        } catch (_) {}
+    }
+
+    function setupLogout() {
+        const btn = document.getElementById("appLogoutBtn");
+        if (btn) {
+            btn.addEventListener("click", () => {
+                if (window.logout) window.logout();
+            });
+        }
     }
 
     /** Met à jour les actions de la topbar dynamiquement */
