@@ -466,7 +466,8 @@ async def tracker_qr(component_id: str, request: Request, current_user=Depends(g
     comp = get_component(component_id)
     if not comp:
         raise HTTPException(status_code=404, detail="Composant introuvable.")
-    base_url = str(request.base_url).rstrip("/")
+    from auth_config import PUBLIC_URL
+    base_url = (PUBLIC_URL or str(request.base_url)).rstrip("/")
     png_bytes = generate_qr_png(
         component_id, base_url, project_id=comp.get("project_id")
     )
@@ -652,6 +653,15 @@ app.include_router(protected_api)
 async def health_check():
     """Vérification de l'état du serveur."""
     return {"status": "ok", "message": "Le serveur fonctionne correctement"}
+
+
+@app.get("/api/public/component/{component_id}")
+async def public_component_detail(component_id: str):
+    """Page publique : détails d'un composant (accessible via QR code sans auth)."""
+    comp = get_component(component_id)
+    if not comp:
+        raise HTTPException(status_code=404, detail="Composant introuvable.")
+    return comp
 
 
 if __name__ == "__main__":

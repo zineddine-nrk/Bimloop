@@ -154,7 +154,7 @@
         .btn-confirm:hover { background: var(--primary-700); }
     </style>
 </head>
-<body>
+<body data-auth="public">
 
 <div class="fade-in">
 
@@ -169,7 +169,6 @@
 </div>
 
 <!-- Layout -->
-<script src="/static/auth.js?v=1"></script>
 <script src="/static/assets/layout.js"></script>
 <script>
     AppLayout.mount({
@@ -243,8 +242,23 @@ function cdLbl(c){return CONDITION_LABELS_EN[c]||c||"—";}
 function agLbl(a){return AGE_LABELS_EN[a]||a||"—";}
 function tyLbl(t){return TYPE_LABELS_EN[t]||t||"—";}
 
+function hasAuth() {
+    try { return !!localStorage.getItem("ifc_auth_token"); } catch (_) { return false; }
+}
+
+function apiFetch(url, opts = {}) {
+    const headers = new Headers(opts.headers);
+    if (hasAuth() && !headers.has("Authorization")) {
+        headers.set("Authorization", "Bearer " + localStorage.getItem("ifc_auth_token"));
+    }
+    return fetch(url, { ...opts, headers });
+}
+
 async function load() {
-    const res = await fetch(`/api/tracker/component/${encodeURIComponent(componentId)}`);
+    const apiPath = hasAuth()
+        ? `/api/tracker/component/${encodeURIComponent(componentId)}`
+        : `/api/public/component/${encodeURIComponent(componentId)}`;
+    const res = await apiFetch(apiPath);
     if (!res.ok) {
         document.getElementById("content").innerHTML = `
             <div class="alert alert-danger">
@@ -403,6 +417,15 @@ function render(comp) {
     `;
     if (window.lucide) lucide.createIcons();
     loadQrImage(comp.id);
+
+    if (!hasAuth()) {
+        document.querySelectorAll("#content .card").forEach((card, i) => {
+            const title = card.querySelector(".card-title");
+            if (title && (title.textContent.includes("Change status") || title.textContent.includes("Condition"))) {
+                card.style.display = "none";
+            }
+        });
+    }
 }
 
 let qrObjectUrl = null;
@@ -411,7 +434,7 @@ async function loadQrImage(componentId) {
     const link = document.getElementById("qrDownload");
     if (!img || !link) return;
     try {
-        const res = await fetch(`/api/tracker/component/${encodeURIComponent(componentId)}/qr`);
+        const res = await apiFetch(`/api/tracker/component/${encodeURIComponent(componentId)}/qr`);
         if (!res.ok) {
             throw new Error("QR fetch failed.");
         }
@@ -508,6 +531,12 @@ function confirmLocation(newStatus, withReason) {
 }
 
 async function saveMeta() {
+    if (!hasAuth()) {
+        const msg = document.getElementById("metaMsg");
+        msg.textContent = "Login required to edit.";
+        msg.style.color = "var(--warning-600)";
+        return;
+    }
     const condition = document.getElementById("metaCondition").value || null;
     const age       = document.getElementById("metaAge").value || null;
     const comment   = document.getElementById("metaComment").value;
@@ -515,7 +544,7 @@ async function saveMeta() {
     msg.textContent = "Saving…";
     msg.style.color = "var(--text-muted)";
 
-    const res = await fetch(`/api/tracker/component/${encodeURIComponent(componentId)}/meta`, {
+    const res = await apiFetch(`/api/tracker/component/${encodeURIComponent(componentId)}/meta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ condition, age_estimated: age, comment }),
@@ -532,7 +561,11 @@ async function saveMeta() {
 }
 
 async function submitStatus(newStatus, note) {
-    const res = await fetch(`/api/tracker/component/${encodeURIComponent(componentId)}/status`, {
+    if (!hasAuth()) {
+        alert("You need to be logged in to update the status.");
+        return;
+    }
+    const res = await apiFetch(`/api/tracker/component/${encodeURIComponent(componentId)}/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus, note: note || null }),
