@@ -655,12 +655,21 @@ async def health_check():
     return {"status": "ok", "message": "Le serveur fonctionne correctement"}
 
 
-@app.get("/api/public/component/{component_id}")
-async def public_component_detail(component_id: str):
+@app.get("/api/public/component/{component_id:path}")
+async def public_component_detail(component_id: str, request: Request):
     """Page publique : détails d'un composant (accessible via QR code sans auth)."""
+    from urllib.parse import unquote
+    component_id = unquote(component_id)
     comp = get_component(component_id)
     if not comp:
-        raise HTTPException(status_code=404, detail="Composant introuvable.")
+        comps = get_all_components()
+        matching = [c["id"] for c in comps[:5]]
+        raise HTTPException(status_code=404, detail={
+            "message": "Composant introuvable.",
+            "searched": component_id,
+            "sample_ids": matching,
+            "count": len(comps),
+        })
     return comp
 
 
