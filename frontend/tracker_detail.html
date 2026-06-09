@@ -282,7 +282,24 @@ function render(comp) {
     const history = comp.history || [];
     document.title = `${tyLbl(comp.type) || comp.id} — IFC Analyzer`;
 
+    const isAuth = hasAuth();
+    const loginUrl = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+
     document.getElementById("content").innerHTML = `
+
+    ${!isAuth ? `
+    <div class="card" style="background:var(--warning-50);border-color:var(--warning-200);">
+        <div class="card-body" style="display:flex;align-items:center;gap:12px;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <i data-lucide="eye" style="color:var(--warning-600);"></i>
+                <span style="color:var(--warning-800);font-size:14px;">
+                    <strong>Lecture seule</strong> — Connectez-vous pour modifier le statut ou les informations.
+                </span>
+            </div>
+            <a href="${loginUrl}" class="btn btn-primary" style="white-space:nowrap;">Se connecter</a>
+        </div>
+    </div>
+    ` : ""}
 
     <!-- Carte statut principale -->
     <div class="status-card">
