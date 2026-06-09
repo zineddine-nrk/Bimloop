@@ -403,9 +403,7 @@ async def tracker_list(
     type: Optional[str] = None,
     current_user=Depends(get_current_user),
 ):
-    """Liste les composants (filtre obligatoire par projet recommandé)."""
-    if project_id is not None:
-        _verify_ownership(project_id, current_user.id)
+    """Liste les composants (filtre par projet)."""
     return get_all_components(
         project_id=project_id, status_filter=status, type_filter=type
     )
@@ -413,8 +411,7 @@ async def tracker_list(
 
 @protected_api.get("/tracker/component/{component_id}")
 async def tracker_detail(component_id: str, current_user=Depends(get_current_user)):
-    """Détail d'un composant avec son historique de statuts."""
-    _verify_component_ownership(component_id, current_user.id)
+    """Détail d'un composant avec son historique de statuts (lecture publique)."""
     comp = get_component(component_id)
     if not comp:
         raise HTTPException(status_code=404, detail="Composant introuvable.")
