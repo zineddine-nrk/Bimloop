@@ -530,7 +530,7 @@ async function uploadAndAnalyze(file) {
         showTable(allElements);
 
         // Charger les statuts depuis la DB (async, ne bloque pas)
-        // fetchDbStatuses() // Désactivé : les statuts tracker sont privés par utilisateur
+        fetchDbStatuses()
 
     } catch (error) {
         alert(`Error: ${error.message}`);
@@ -725,7 +725,7 @@ async function fetchDbStatuses() {
     const ids = allElements.map(e => e.id).filter(Boolean);
     if (!ids.length) return;
     try {
-        const res = await fetch("/api/tracker/statuses", {
+        const res = await fetch("/api/public/statuses", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ids }),

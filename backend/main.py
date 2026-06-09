@@ -679,6 +679,12 @@ async def public_component_detail(component_id: str, request: Request):
     return comp
 
 
+@app.post("/api/public/statuses")
+async def public_tracker_statuses(req: StatusesRequest):
+    """Retourne les statuts des composants (public, pour la page Extraction)."""
+    return get_statuses_by_ids(req.ids, project_id=req.project_id)
+
+
 if __name__ == "__main__":
     import uvicorn
     # reload=True désactivé : sous Windows, le reloader laisse parfois des workers
