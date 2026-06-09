@@ -58,7 +58,8 @@ function formatNum(v) {
     return Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(2).replace(/\.?0+$/, "");
 }
 
-/** Extrait dimensions (hauteur, longueur, épaisseur, surface, volume) depuis les PSets IFC. */
+/** Extrait dimensions (hauteur, longueur, épaisseur, surface, volume) depuis les PSets IFC.
+    Conversion auto mm → m si valeur > 10 (IFC stocke souvent en mm). */
 function extractDimensions(psets) {
     const out = {};
     if (!Array.isArray(psets)) return out;
@@ -74,13 +75,19 @@ function extractDimensions(psets) {
         for (const p of props) {
             const name = p?.Name?.value;
             if (!name) continue;
-            const val =
+            let val =
                 p?.NominalValue?.value ?? p?.LengthValue?.value ??
                 p?.AreaValue?.value ?? p?.VolumeValue?.value ?? p?.Value?.value;
             if (val == null) continue;
+            val = Number(val);
+            if (!isFinite(val)) continue;
             for (const [outKey, candidates] of Object.entries(keys)) {
                 if (out[outKey] != null) continue;
                 if (candidates.some(c => name.toLowerCase() === c.toLowerCase())) {
+                    // Conversion mm → m pour les longueurs et épaisseurs
+                    if (outKey !== "area" && outKey !== "volume" && val > 10) {
+                        val = val / 1000.0;
+                    }
                     out[outKey] = val;
                 }
             }
