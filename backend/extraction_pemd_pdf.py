@@ -172,14 +172,14 @@ def _compute_summary(elements: List[Dict]) -> Dict[str, Any]:
     for mat, vals in sorted(mat_acc.items(), key=lambda kv: -kv[1]["volume"]):
         par_materiau[mat] = {
             "volume":  round(vals["volume"], 3),
-            "masse":   round(vals["masse"],  1),
-            "density": int(vals["density"]),
+            "masse":   round(vals["masse"] / 1000,  3),
+            "density": round(vals["density"] / 1000, 2),
         }
 
     return {
         "total":        len(elements),
         "volume_total": round(total_volume, 3),
-        "masse_totale": round(total_masse,  1),
+        "masse_totale": round(total_masse / 1000, 3),
         "par_materiau": par_materiau,
     }
 
@@ -251,7 +251,7 @@ def generate_extraction_pemd_csv(elements: List[Dict]) -> bytes:
     writer.writerow(["=== RÉSUMÉ DU BÂTIMENT ==="])
     writer.writerow(["Nombre total de composants", summary["total"]])
     writer.writerow([])
-    writer.writerow(["Matériau", "Volume estimé (m³)", "Densité (kg/m³)", "Masse estimée (kg)"])
+    writer.writerow(["Matériau", "Volume estimé (m³)", "Densité (t/m³)", "Masse estimée (t)"])
     for mat, vals in summary["par_materiau"].items():
         writer.writerow([mat, vals["volume"], vals["density"], vals["masse"]])
     writer.writerow(["TOTAL", summary["volume_total"], "", summary["masse_totale"]])
@@ -348,8 +348,8 @@ def generate_extraction_pemd_pdf(elements: List[Dict], project_label: str = "") 
         sum_data.append([
             Paragraph(mat,                          s_td_s),
             Paragraph(f"{vals['volume']} m³",      s_td_r),
-            Paragraph(f"{vals['density']} kg/m³",  s_td_r),
-            Paragraph(f"{vals['masse']} kg",        s_td_r),
+            Paragraph(f"{vals['density']} t/m³",  s_td_r),
+            Paragraph(f"{vals['masse']} t",        s_td_r),
         ])
         sum_style.append(("BACKGROUND", (0, ri), (-1, ri), bg))
 
@@ -358,7 +358,7 @@ def generate_extraction_pemd_pdf(elements: List[Dict], project_label: str = "") 
         Paragraph("TOTAL",                         s_td_b),
         Paragraph(f"{summary['volume_total']} m³", s_td_rb),
         Paragraph("—",                             s_td_r),
-        Paragraph(f"{summary['masse_totale']} kg", s_td_rb),
+        Paragraph(f"{summary['masse_totale']} t", s_td_rb),
     ])
     sum_style.append(("BACKGROUND", (0, ri_tot), (-1, ri_tot), _LBLUE))
 
