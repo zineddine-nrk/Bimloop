@@ -189,6 +189,11 @@ if (_pathParts.length >= 2 && /^\d+$/.test(_pathParts[0])) {
 } else {
     componentId = decodeURIComponent(_pathParts.join("/"));
 }
+// Certains navigateurs mobiles gardent %24 au lieu de $ dans pathname
+if (componentId.includes("%24")) {
+    componentId = componentId.replace(/%24/g, "$");
+}
+console.log("Component ID:", componentId);
 
 const STATUS_COLORS = {
     "in_building":    "#1e40af",
