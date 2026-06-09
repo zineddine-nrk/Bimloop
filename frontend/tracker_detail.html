@@ -289,14 +289,14 @@ function render(comp) {
 
     ${!isAuth ? `
     <div class="alert alert-warning" style="margin-bottom:16px;">
-        <div style="display:flex;align-items:center;gap:12px;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;">
             <div style="display:flex;align-items:center;gap:10px;">
-                <i data-lucide="eye" style="width:20px;height:20px;"></i>
+                <i data-lucide="eye" style="width:20px;height:20px;flex-shrink:0;"></i>
                 <span>
                     <strong>Lecture seule</strong> — Connectez-vous pour modifier le statut ou les informations.
                 </span>
             </div>
-            <a href="${loginUrl}" class="btn btn-primary" style="white-space:nowrap;">Se connecter</a>
+            <a href="${loginUrl}" class="btn btn-primary" style="white-space:nowrap;">Lecture seule — Connectez-vous pour modifier</a>
         </div>
     </div>
     ` : ""}
