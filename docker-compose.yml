@@ -18,6 +18,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - DATA_DIR=/app/backend/data
       - DATABASE_URL=postgresql+psycopg://bimloop:bimloop@postgres:5432/bimloop
       - JWT_SECRET_KEY=change-me-in-production
     volumes:

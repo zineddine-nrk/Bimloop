@@ -8,6 +8,7 @@ import io
 import os
 from datetime import datetime
 from typing import List, Dict, Optional, Any
+from urllib.parse import quote
 
 import qrcode
 from qrcode.image.pure import PyPNGImage
@@ -523,10 +524,11 @@ def get_components_meta_by_ids(ids: List[str],
 def generate_qr_png(component_id: str, base_url: str,
                     project_id: Optional[int] = None) -> bytes:
     """Génère un QR code PNG pointant vers la page détail du composant."""
+    safe_id = quote(str(component_id), safe="")
     if project_id is not None:
-        url = f"{base_url}/tracker/{project_id}/{component_id}"
+        url = f"{base_url}/tracker/{project_id}/{safe_id}"
     else:
-        url = f"{base_url}/tracker/{component_id}"
+        url = f"{base_url}/tracker/{safe_id}"
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
