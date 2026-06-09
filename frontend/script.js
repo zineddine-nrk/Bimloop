@@ -168,7 +168,7 @@ async function restoreLastExtractionIfAny() {
     }
 
     showTable(allElements);
-    fetchDbStatuses();
+    // fetchDbStatuses() // Désactivé : les statuts tracker sont privés par utilisateur
 }
 
 // ============================================================
@@ -530,7 +530,7 @@ async function uploadAndAnalyze(file) {
         showTable(allElements);
 
         // Charger les statuts depuis la DB (async, ne bloque pas)
-        fetchDbStatuses();
+        // fetchDbStatuses() // Désactivé : les statuts tracker sont privés par utilisateur
 
     } catch (error) {
         alert(`Error: ${error.message}`);

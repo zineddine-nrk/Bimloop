@@ -288,11 +288,11 @@ function render(comp) {
     document.getElementById("content").innerHTML = `
 
     ${!isAuth ? `
-    <div class="card" style="background:var(--warning-50);border-color:var(--warning-200);">
-        <div class="card-body" style="display:flex;align-items:center;gap:12px;justify-content:space-between;">
+    <div class="alert alert-warning" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:12px;justify-content:space-between;">
             <div style="display:flex;align-items:center;gap:10px;">
-                <i data-lucide="eye" style="color:var(--warning-600);"></i>
-                <span style="color:var(--warning-800);font-size:14px;">
+                <i data-lucide="eye" style="width:20px;height:20px;"></i>
+                <span>
                     <strong>Lecture seule</strong> — Connectez-vous pour modifier le statut ou les informations.
                 </span>
             </div>
