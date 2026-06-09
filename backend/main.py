@@ -467,7 +467,16 @@ async def tracker_qr(component_id: str, request: Request, current_user=Depends(g
     if not comp:
         raise HTTPException(status_code=404, detail="Composant introuvable.")
     from auth_config import PUBLIC_URL
-    base_url = (PUBLIC_URL or str(request.base_url)).rstrip("/")
+    if PUBLIC_URL:
+        base_url = PUBLIC_URL.rstrip("/")
+    else:
+        # Détection HTTPS derrière un reverse proxy (nginx/Apache)
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.hostname))
+        base_url = f"{proto}://{host}"
+        port = request.headers.get("x-forwarded-port")
+        if port and port not in ("80", "443"):
+            base_url += f":{port}"
     png_bytes = generate_qr_png(
         component_id, base_url, project_id=comp.get("project_id")
     )
