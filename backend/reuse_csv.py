@@ -239,16 +239,9 @@ CSV_HEADERS = [
 ]
 
 
-def generate_reuse_csv(project_id: int) -> bytes:
-    """Génère le CSV (UTF-8 + BOM, séparateur ';')."""
-    project = get_project(project_id)
-    if not project:
-        raise ValueError(f"Projet {project_id} introuvable.")
-
-    # 1) Composants « à réutiliser » uniquement (= disponibles pour réemploi)
+def _build_enriched_components(project_id: int) -> List[Dict]:
+    """Récupère et enrichit les composants 'à réutiliser' avec les données IFC."""
     components = get_all_components(project_id=project_id, status_filter="à réutiliser")
-
-    # 2) Enrichissement depuis l'IFC source (dimensions, surfaces, volumes)
     ifc_info = get_project_ifc(project_id)
     ifc_index = _parse_ifc_index(ifc_info["path"]) if ifc_info else {}
 
@@ -265,14 +258,17 @@ def generate_reuse_csv(project_id: int) -> bytes:
             "age_estimated":  comp.get("age_estimated"),
             "comment":        comp.get("comment"),
             "lifespan_months": comp.get("lifespan_months"),
-            "hauteur":    ifc_data.get("hauteur"),
-            "longueur":   ifc_data.get("longueur"),
-            "epaisseur":  ifc_data.get("epaisseur"),
-            "net_area":   ifc_data.get("net_area"),
-            "net_volume": ifc_data.get("net_volume"),
+            "hauteur":    comp.get("hauteur") or ifc_data.get("hauteur"),
+            "longueur":   comp.get("longueur") or ifc_data.get("longueur"),
+            "epaisseur":  comp.get("epaisseur") or ifc_data.get("epaisseur"),
+            "net_area":   comp.get("net_area") or ifc_data.get("net_area"),
+            "net_volume": comp.get("net_volume") or ifc_data.get("net_volume"),
         })
+    return enriched
 
-    # 3) Regroupement BIM : (type, matériau, dimensions arrondies)
+
+def _build_groups(enriched: List[Dict]) -> Dict[Tuple, List[Dict]]:
+    """Regroupe les composants enrichis par (type, matériau, dimensions)."""
     groups: Dict[Tuple, List[Dict]] = defaultdict(list)
     for el in enriched:
         dims_key = (
@@ -282,34 +278,83 @@ def generate_reuse_csv(project_id: int) -> bytes:
         )
         key = (el["type"], el["materiau"], dims_key)
         groups[key].append(el)
+    return groups
 
-    # 4) Écriture CSV
-    buf = io.StringIO()
-    writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
-    writer.writerow(CSV_HEADERS)
 
+def get_pemd_grouped_data(project_id: int) -> List[Dict]:
+    """
+    Retourne les données PEMD groupées pour le projet (composants 'à réutiliser').
+    Chaque élément est un dict avec les champs CERFA (5)–(18) prêts à l'export.
+    """
+    enriched = _build_enriched_components(project_id)
+    groups = _build_groups(enriched)
+
+    rows: List[Dict] = []
     for (type_name, materiau, _dims_key), items in sorted(
         groups.items(), key=lambda x: (x[0][0] or "", x[0][1] or "")
     ):
         cat = PEMD_CATEGORIES.get(type_name, PEMD_DEFAULT)
         sample = items[0]
         dims = _dimensions_str(sample)
-        qte  = _quantite(items, cat["unit"], len(items))
+        qte = _quantite(items, cat["unit"], len(items))
 
+        comments = [it.get("comment") for it in items]
+        lifespans = [it.get("lifespan_months") for it in items]
+
+        rows.append({
+            "group_key": f"{type_name}|{materiau}|{_dims_key}",
+            "categorie": _categorie_label(cat),
+            "description": _description(type_name, materiau, dims),
+            "quantite": qte,
+            "dimensions": dims,
+            "assemblage": "",
+            "age_estime": _join_unique([it.get("age_estimated") for it in items]),
+            "etat": _join_unique([it.get("condition") for it in items]),
+            "substances_dangereuses": False,
+            "materiaux": materiau or "",
+            "localisation": False,
+            "conditions_reemploi": False,
+            "infos_techniques": False,
+            "precautions": False,
+            "infos_techniques_text": _infos_techniques(items, comments, lifespans),
+            "type_name": type_name,
+            "materiau": materiau,
+            "count": len(items),
+            "unit": cat["unit"],
+        })
+    return rows
+
+
+def generate_reuse_csv_from_data(rows: List[Dict]) -> bytes:
+    """Génère le CSV (UTF-8 + BOM, séparateur ';') à partir des données fournies."""
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(CSV_HEADERS)
+
+    for row in rows:
         writer.writerow([
-            _categorie_label(cat),                             # (5)  Catégorie
-            _description(type_name, materiau, dims),           # (6)  Description
-            qte,                                               # (7)  Quantité + unité
-            dims,                                              # (8)  Dimensions
-            "",                                                # (9)  Assemblage  ← non déductible
-            _join_unique([it.get("age_estimated") for it in items]),  # (10) Âge estimé (depuis tracker)
-            _join_unique([it.get("condition") for it in items]),       # (11) État (depuis tracker)
-            "",                                                # (12) Substances dangereuses ← laissé vide
-            materiau or "",                                    # (13) Matériaux constitutifs
-            "",                                                # (15) Localisation et fonction ← laissé vide
-            "",                                                # (16) Conditions techniques/économiques ← laissé vide
-            "",                                                # (17) Infos techniques ← laissé vide
-            "",                                                # (18) Précautions ← laissé vide
+            row.get("categorie", ""),
+            row.get("description", ""),
+            row.get("quantite", ""),
+            row.get("dimensions", ""),
+            row.get("assemblage", ""),
+            row.get("age_estime", ""),
+            row.get("etat", ""),
+            "Oui" if row.get("substances_dangereuses") else "",
+            row.get("materiaux", ""),
+            "Oui" if row.get("localisation") else "",
+            "Oui" if row.get("conditions_reemploi") else "",
+            "Oui" if row.get("infos_techniques") else "",
+            "Oui" if row.get("precautions") else "",
         ])
 
     return b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")
+
+
+def generate_reuse_csv(project_id: int) -> bytes:
+    """Génère le CSV (UTF-8 + BOM, séparateur ';')."""
+    project = get_project(project_id)
+    if not project:
+        raise ValueError(f"Projet {project_id} introuvable.")
+    rows = get_pemd_grouped_data(project_id)
+    return generate_reuse_csv_from_data(rows)

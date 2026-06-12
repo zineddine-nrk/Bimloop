@@ -122,9 +122,6 @@
                     <button class="btn btn-secondary btn-sm" id="exportBtpMatchBtn" onclick="downloadBtpMatchPdf()" title="Generate a BTP Match PDF report">
                         <i data-lucide="file-text"></i> BTP Match Export
                     </button>
-                    <a href="/pemd" class="btn btn-secondary btn-sm" id="pemdEditorBtn" title="Open the PEMD editor (CERFA table)">
-                        <i data-lucide="table"></i> PEMD Editor
-                    </a>
                     <button class="btn btn-danger btn-sm" id="deleteProjectBtn" onclick="deleteCurrentProject()">
                         <i data-lucide="trash-2"></i> Delete
                     </button>
@@ -350,7 +347,7 @@ function openCsvPicker(event) {
     menu.innerHTML = `
         <button data-kind="pem" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:12px 16px;font-size:13px;cursor:pointer;color:var(--text-strong);">
             <strong>PEM report</strong>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Products / Equipment / Materials for reuse</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Preview, edit and export CERFA PEMD</div>
         </button>
         <div style="height:1px;background:var(--border);"></div>
         <button data-kind="di" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:12px 16px;font-size:13px;cursor:pointer;color:var(--text-strong);">
@@ -363,8 +360,8 @@ function openCsvPicker(event) {
         b.addEventListener("click", () => {
             const kind = b.dataset.kind;
             menu.remove();
-            if (kind === "pem") downloadCsv("export-reuse-csv", `diagnostic_reemploi_projet${currentProjectId}.csv`);
-            else                downloadCsv("export-di-csv",    `dechets_inertes_projet${currentProjectId}.csv`);
+            if (kind === "pem") openPemdModal();
+            else                downloadCsv("export-di-csv", `dechets_inertes_projet${currentProjectId}.csv`);
         });
     });
     document.body.appendChild(menu);
@@ -780,6 +777,228 @@ async function submitBulkMeta() {
     clearSelection();
     await loadStats();
     await loadComponents();
+}
+
+// ============ PEMD MODAL ============
+let pemdModalRows = [];
+
+async function openPemdModal() {
+    if (!currentProjectId) { alert("No project selected."); return; }
+    document.getElementById("pemdModal")?.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "pemdModal";
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+        <div class="modal-box" style="max-width: 95vw; width: 1400px;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content:space-between;">
+                <h3 class="modal-title"><i data-lucide="table"></i> PEMD Report — Preview & Edit</h3>
+                <button class="btn btn-secondary btn-sm" onclick="closePemdModal()">Close</button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto; padding: 0;">
+                <div style="padding: 16px; text-align: center; color: var(--text-muted);" id="pemdLoading">Loading grouped data…</div>
+                <div id="pemdTableContainer" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closePemdModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="exportPemd('csv')"><i data-lucide="file-spreadsheet"></i> Export CSV</button>
+                <button class="btn btn-primary" onclick="exportPemd('pdf')"><i data-lucide="file-text"></i> Export PDF</button>
+            </div>
+        </div>`;
+    overlay.addEventListener("click", () => closePemdModal());
+    document.body.appendChild(overlay);
+    if (window.lucide) lucide.createIcons();
+
+    try {
+        const res = await fetch(`/api/tracker/projects/${currentProjectId}/pemd-grouped-data`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            document.getElementById("pemdLoading").textContent = `Error: ${err.detail || res.status}`;
+            return;
+        }
+        const rows = await res.json();
+        pemdModalRows = rows;
+        renderPemdModal(rows);
+    } catch (e) {
+        document.getElementById("pemdLoading").textContent = `Error: ${e.message}`;
+    }
+}
+
+function renderPemdModal(rows) {
+    document.getElementById("pemdLoading").style.display = "none";
+    const container = document.getElementById("pemdTableContainer");
+    container.style.display = "block";
+
+    if (!rows.length) {
+        container.innerHTML = `<p style="text-align:center;padding:48px;color:var(--text-muted);">No "To reuse" components found. Change component status to "To reuse" first.</p>`;
+        return;
+    }
+
+    const BLUE_MAIN = '#1e3a5f';
+    const BLUE_MID = '#bfdbfe';
+    const PURPLE_MID = '#8b8db0';
+    const PURPLE_LIGHT = '#c7c8e0';
+    const WHITE = '#ffffff';
+    const GREY_LIGHT = '#f3f4f6';
+
+    const html = `
+    <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;background:${WHITE};border:1px solid ${BLUE_MAIN};">
+            <thead>
+                <tr>
+                    <th colspan="9" style="background:${BLUE_MAIN};color:${WHITE};padding:10px 6px;font-size:12px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};">
+                        Remplissez ces colonnes
+                    </th>
+                    <th colspan="4" style="background:${PURPLE_MID};color:${WHITE};padding:10px 6px;font-size:12px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};">
+                        Cochez la case pour indiquer si ces informations sont renseignées dans votre rapport de diagnostic (14)
+                    </th>
+                </tr>
+                <tr>
+                    <th style="background:${BLUE_MID};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:9%;">
+                        Catégorie<br>(5)
+                    </th>
+                    <th style="background:${BLUE_MID};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:11%;">
+                        Description<br>(6)
+                    </th>
+                    <th style="background:${BLUE_MID};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:8%;">
+                        Quantité disponible et unité appropriée<br>(7)
+                    </th>
+                    <th style="background:${BLUE_MID};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:8%;">
+                        Dimensions<br>(8)
+                    </th>
+                    <th style="background:${BLUE_MID};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:8%;">
+                        Type principal d'assemblage<br>(9)
+                    </th>
+                    <th style="background:${BLUE_MID};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:6%;">
+                        Âge estimé<br>(10)
+                    </th>
+                    <th style="background:${BLUE_MID};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:8%;">
+                        État de conservation ou de fonctionnement estimé<br>(11)
+                    </th>
+                    <th style="background:${BLUE_MID};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:8%;">
+                        Suspectez-vous la présence de substances dangereuses ou de polluant organique persistant dans ce PEM ?<br>(12)
+                    </th>
+                    <th style="background:${BLUE_MID};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:9%;">
+                        Matériaux Constitutifs<br>(13)
+                    </th>
+                    <th style="background:${PURPLE_LIGHT};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:8%;">
+                        Localisation et fonction du PEM dans le bâtiment<br>(15)
+                    </th>
+                    <th style="background:${PURPLE_LIGHT};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:9%;">
+                        Conditions techniques et économiques pour permettre le réemploi du PEM<br>(16)
+                    </th>
+                    <th style="background:${PURPLE_LIGHT};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:8%;">
+                        Informations techniques disponibles<br>(17)
+                    </th>
+                    <th style="background:${PURPLE_LIGHT};color:${BLUE_MAIN};padding:10px 6px;font-size:10px;font-weight:600;text-align:center;border:1px solid ${BLUE_MAIN};width:8%;">
+                        Précautions de dépose, transport et stockage<br>(18)
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows.map((r, i) => `
+                <tr data-idx="${i}" style="background:${i%2===0?WHITE:GREY_LIGHT};">
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;font-size:11px;">${r.categorie}</td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="text" data-field="description" value="${r.description}" style="width:100%;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
+                    </td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;font-size:11px;color:#666;">${r.quantite}</td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="text" data-field="dimensions" value="${r.dimensions}" style="width:100%;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
+                    </td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="text" data-field="assemblage" value="${r.assemblage}" style="width:100%;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
+                    </td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="text" data-field="age_estime" value="${r.age_estime}" style="width:100%;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
+                    </td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="text" data-field="etat" value="${r.etat}" style="width:100%;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
+                    </td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="checkbox" data-field="substances_dangereuses" ${r.substances_dangereuses ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;">
+                    </td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="text" data-field="materiaux" value="${r.materiaux}" style="width:100%;padding:4px;font-size:11px;border:1px solid #ccc;border-radius:4px;">
+                    </td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="checkbox" data-field="localisation" ${r.localisation ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;">
+                    </td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="checkbox" data-field="conditions_reemploi" ${r.conditions_reemploi ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;">
+                    </td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="checkbox" data-field="infos_techniques" ${r.infos_techniques ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;">
+                    </td>
+                    <td style="padding:8px 6px;border:1px solid ${BLUE_MAIN};text-align:center;vertical-align:middle;">
+                        <input type="checkbox" data-field="precautions" ${r.precautions ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;">
+                    </td>
+                </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    </div>`;
+    container.innerHTML = html;
+}
+
+function closePemdModal() {
+    document.getElementById("pemdModal")?.remove();
+    pemdModalRows = [];
+}
+
+async function exportPemd(format) {
+    const tbody = document.querySelector("#pemdTableContainer tbody");
+    if (!tbody) { alert("No data to export."); return; }
+
+    const rows = [];
+    tbody.querySelectorAll("tr").forEach(tr => {
+        const idx = Number(tr.dataset.idx);
+        const base = pemdModalRows[idx];
+        const updated = { ...base };
+        tr.querySelectorAll("[data-field]").forEach(el => {
+            const field = el.dataset.field;
+            if (el.type === "checkbox") {
+                updated[field] = el.checked;
+            } else {
+                updated[field] = el.value || "";
+            }
+        });
+        rows.push(updated);
+    });
+
+    const btn = event.target.closest("button");
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2"></i> Exporting…`;
+    if (window.lucide) lucide.createIcons();
+
+    try {
+        const res = await fetch(`/api/tracker/projects/${currentProjectId}/export-pemd`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rows, format }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(`Export error: ${err.detail || res.status}`);
+            return;
+        }
+        const cd = res.headers.get("Content-Disposition") || "";
+        const m = cd.match(/filename="?([^"]+)"?/);
+        const filename = m ? m[1] : `PEMD_projet${currentProjectId}.${format}`;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+        closePemdModal();
+    } catch (e) {
+        alert(`Export error: ${e.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        if (window.lucide) lucide.createIcons();
+    }
 }
 
 (async () => {

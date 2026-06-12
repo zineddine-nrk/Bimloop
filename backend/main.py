@@ -24,14 +24,13 @@ from tracker import (
     update_component_meta, CONDITIONS_VALIDES, AGES_VALIDES,
     set_project_ifc, get_project_ifc,
     project_belongs_to_user, component_belongs_to_user,
-    get_pemd_components, update_pemd_data,
 )
 from ifc_exporter import export_ifc_with_statuses
-from reuse_csv import generate_reuse_csv
+from reuse_csv import generate_reuse_csv, get_pemd_grouped_data, generate_reuse_csv_from_data
+from pemd_pdf import generate_pemd_pdf_from_data
 from di_csv import generate_di_csv
 from btp_match_pdf import generate_btp_match_pdf
 from extraction_pemd_pdf import generate_extraction_pemd_pdf, generate_extraction_pemd_csv
-from pemd_pdf import generate_pemd_pdf
 from auth_db import init_auth_db
 from auth_routes import auth_router
 from auth_security import get_current_user
@@ -507,62 +506,59 @@ async def tracker_ages():
 
 
 # ============================================================
-# PEMD — Éditeur CERFA interactif
+# PEMD — Données groupées et export avec modification
 # ============================================================
 
-class PemdUpdateRequest(BaseModel):
-    pem_category: Optional[str] = None
-    pem_description: Optional[str] = None
-    pem_quantity: Optional[str] = None
-    pem_dimensions: Optional[str] = None
-    pem_assembly_type: Optional[str] = None
-    pem_age: Optional[str] = None
-    pem_condition: Optional[str] = None
-    pem_hazardous: Optional[int] = None
-    pem_materials: Optional[str] = None
-    pem_location: Optional[int] = None
-    pem_reuse_conditions: Optional[int] = None
-    pem_tech_info: Optional[int] = None
-    pem_transport_precautions: Optional[int] = None
+class PemdExportRequest(BaseModel):
+    rows: List[Dict[str, Any]]
+    format: str = "csv"
 
 
-@protected_api.get("/tracker/projects/{project_id}/pemd")
-async def tracker_pemd_components(project_id: int, current_user=Depends(get_current_user)):
-    """Liste les composants PEMD (à réutiliser) du projet avec leurs données CERFA."""
+@protected_api.get("/tracker/projects/{project_id}/pemd-grouped-data")
+async def tracker_pemd_grouped_data(project_id: int, current_user=Depends(get_current_user)):
+    """Retourne les données PEMD groupées (CERFA) pour le projet."""
     _verify_ownership(project_id, current_user.id)
-    return get_pemd_components(project_id)
-
-
-@protected_api.post("/tracker/component/{component_id}/pemd")
-async def tracker_update_pemd(component_id: str, req: PemdUpdateRequest, current_user=Depends(get_current_user)):
-    """Met à jour les champs PEMD (CERFA) d'un composant."""
-    _verify_component_ownership(component_id, current_user.id)
     try:
-        return update_pemd_data(component_id, req.model_dump(exclude_unset=True))
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Composant introuvable.")
-
-
-@protected_api.get("/tracker/projects/{project_id}/export-pemd-pdf")
-async def tracker_export_pemd_pdf(project_id: int, current_user=Depends(get_current_user)):
-    """Exporte le PDF PEMD (CERFA) avec le tableau de caractérisation."""
-    _verify_ownership(project_id, current_user.id)
-    components = get_pemd_components(project_id)
-    if not components:
-        raise HTTPException(status_code=404, detail="Aucun composant réutilisable trouvé.")
-    try:
-        pdf_bytes = generate_pemd_pdf(components)
+        return get_pemd_grouped_data(project_id)
     except Exception as e:
         import traceback
-        print("[export-pemd-pdf] ERREUR :\n" + traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Échec PDF : {e}")
-    from datetime import datetime
-    filename = f"PEMD_projet{project_id}_{datetime.now().strftime('%Y-%m-%d')}.pdf"
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+        print("[pemd-grouped-data] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Échec récupération données PEMD : {e}")
+
+
+@protected_api.post("/tracker/projects/{project_id}/export-pemd")
+async def tracker_export_pemd(project_id: int, req: PemdExportRequest, current_user=Depends(get_current_user)):
+    """Exporte le CSV ou PDF PEMD (CERFA) avec les données modifiées par l'utilisateur."""
+    _verify_ownership(project_id, current_user.id)
+    if not req.rows:
+        raise HTTPException(status_code=400, detail="Aucune donnée à exporter.")
+    try:
+        from datetime import datetime
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        if req.format == "csv":
+            csv_bytes = generate_reuse_csv_from_data(req.rows)
+            filename = f"PEMD_projet{project_id}_{date_str}.csv"
+            return Response(
+                content=csv_bytes,
+                media_type="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        elif req.format == "pdf":
+            project = get_project(project_id)
+            project_name = project.get("name", "") if project else ""
+            pdf_bytes = generate_pemd_pdf_from_data(req.rows, project_name)
+            filename = f"PEMD_projet{project_id}_{date_str}.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Format non supporté. Utilisez 'csv' ou 'pdf'.")
+    except Exception as e:
+        import traceback
+        print("[export-pemd] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Échec export PEMD : {e}")
 
 
 @protected_api.post("/tracker/component/{component_id}/meta")
@@ -700,10 +696,6 @@ async def tracker_project_ifc_raw(project_id: int, current_user=Depends(get_curr
     )
 
 # Nouvelle URL avec project_id (utilisée par les QR codes et le clic dans le tracker)
-@app.get("/pemd")
-async def pemd_editor_page():
-    """Page de l'éditeur PEMD CERFA."""
-    return FileResponse(os.path.join(FRONTEND_DIR, "pemd_editor.html"))
 
 
 @app.get("/tracker/{project_id:int}/{component_id}")

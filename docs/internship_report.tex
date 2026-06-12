@@ -1,0 +1,400 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
+
+\geometry{margin=2.5cm}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Internship Report — IFC Analyzer Platform}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\definecolor{usercolor}{RGB}{59,130,246}
+\definecolor{systemcolor}{RGB}{16,185,129}
+\definecolor{dbcolor}{RGB}{139,92,246}
+\definecolor{processcolor}{RGB}{245,158,11}
+
+\titleformat{\section}{\Large\bfseries\color{usercolor}}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries\color{systemcolor}}{\thesubsection}{1em}{}
+
+\begin{document}
+
+% ============================================================
+% TITLE PAGE
+% ============================================================
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries Internship Report\\[0.5cm]
+\Large IFC Analyzer — BIM-Based Component Management Platform\\[2cm]}
+{\large Zineddine NIRAK\\[0.3cm]
+May 2026\\[3cm]}
+\vfill
+\end{titlepage}
+
+% ============================================================
+% TABLE OF CONTENTS
+% ============================================================
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Introduction}
+% ============================================================
+
+The construction industry generates a significant amount of waste and consumes a large quantity of raw materials every year. In recent years, sustainable construction and circular economy principles have become major priorities in the Architecture, Engineering, and Construction (AEC) sector.
+
+Building Information Modeling (BIM) offers new opportunities to improve building lifecycle management by providing intelligent digital representations of buildings and their components. However, many existing BIM workflows focus mainly on design and construction phases, while the reuse and recovery of building components remain insufficiently explored.
+
+This project proposes a BIM-based platform designed to support building component extraction, tracking, visualization, and reuse management using IFC models. The platform aims to facilitate the identification of reusable elements and assist professionals during selective deconstruction and material recovery processes.
+
+The system integrates several functionalities, including:
+\begin{itemize}
+    \item automatic extraction of building components from IFC files,
+    \item tracking and classification of reusable materials,
+    \item interactive 3D visualization of building elements,
+    \item and semi-automatic generation of PEMD-related information for reusable components.
+\end{itemize}
+
+The objective of this work is to demonstrate how BIM technologies can contribute to more sustainable construction practices and improve material circularity in the construction sector.
+
+% ============================================================
+\section{Problem Statement}
+% ============================================================
+
+The construction industry is one of the largest consumers of raw materials and one of the main contributors to global waste generation and carbon emissions. In this context, the transition toward a circular economy has become a major priority, aiming to extend the lifecycle of building materials through reuse, recycling, and recovery strategies instead of disposal.
+
+Building Information Modeling (BIM) has significantly improved the way buildings are designed, constructed, and managed. However, its potential in supporting circular economy practices, particularly during renovation and deconstruction phases, remains limited. Most BIM applications are still focused on the design and construction stages, with insufficient support for end-of-life decision-making.
+
+A key challenge lies in the lack of effective methods to exploit the rich information contained in IFC models for material recovery purposes. Although IFC files store detailed geometric and semantic data about building components, this information is often not structured or accessible in a way that supports decision-making for reuse, recycling, or dismantling strategies.
+
+Furthermore, current workflows do not provide sufficient tools for classifying, tracking, and managing building components during deconstruction processes. This results in poor visibility of material flows, limited traceability of components, and reduced ability to evaluate their recovery potential. As a consequence, valuable materials are often discarded instead of being reintegrated into new construction cycles.
+
+Another limitation is the absence of integrated digital solutions capable of linking BIM data with circular economy requirements such as PEMD reporting, material inventories, and selective deconstruction planning. This gap prevents a fully data-driven approach to sustainable building lifecycle management.
+
+Therefore, there is a clear need for a BIM-based system that supports structured extraction, organization, and visualization of building components in order to enable efficient material recovery and to promote circular economy principles in the construction sector.
+
+% ============================================================
+\section{Objectives}
+% ============================================================
+
+The main objective of this project is to develop a BIM-based platform capable of assisting professionals in the identification, tracking, and management of building components during deconstruction, renovation, and end-of-life processes.
+
+The platform is designed to improve material recovery workflows by combining Building Information Modeling (BIM) technologies with interactive visualization and component management functionalities.
+
+The project focuses on the following objectives:
+
+\begin{itemize}
+    \item Automatically extract building elements and their associated information from IFC models;
+    \item Organize and classify building components according to their type, material, and IFC properties;
+    \item Provide an interactive 3D visualization environment for exploring building elements and their geometric and semantic information;
+    \item Enable tracking of building components throughout different stages of the deconstruction and renovation process;
+    \item Assist in the generation of PEMD-related information based on extracted building components;
+    \item Contribute to circular economy practices in the construction sector by improving material understanding, traceability, and waste reduction.
+\end{itemize}
+
+% ============================================================
+\section{Proposed Platform}
+% ============================================================
+
+To address the challenges discussed in the previous section, a BIM-based platform was developed to support the management of building components during renovation, deconstruction, and material recovery processes. The platform aims to facilitate the exploitation of information contained in IFC models and transform it into actionable data for circular economy applications.
+
+The proposed platform serves as a centralized environment where building information can be extracted, organized, visualized, and managed throughout different stages of a building's lifecycle. By leveraging BIM data, the system provides users with a better understanding of building components and their associated characteristics, including geometry, materials, quantities, and semantic properties.
+
+The platform is designed around several core functionalities. First, it enables the automatic extraction of building elements and their associated information from IFC files. The extracted data is then structured and organized to create a comprehensive inventory of building components.
+
+Second, the platform provides interactive 3D visualization capabilities, allowing users to explore BIM models and inspect individual elements together with their associated information. This visualization layer facilitates the analysis and interpretation of building data.
+
+Third, the system supports component tracking and status management. Building elements can be monitored throughout renovation and deconstruction processes, enabling stakeholders to maintain updated information regarding their condition and recovery strategy.
+
+Finally, the platform contributes to the preparation of PEMD-related information by providing structured access to building component data and material inventories. This functionality supports decision-making processes related to material recovery and circular economy practices.
+
+Overall, the proposed platform aims to bridge the gap between BIM data and circular economy requirements by providing an integrated solution for component extraction, visualization, tracking, and management.
+
+% ============================================================
+\section{System Workflow (Detailed)}
+% ============================================================
+\label{sec:workflow}
+
+This section describes in detail the complete system workflow, covering the authentication module, the extraction module, the tracking module, and the 3D visualization module.
+
+% --------------------------------------------------------
+\subsection{Authentication Module}
+% --------------------------------------------------------
+
+\subsubsection{Registration Flow}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{User Action:} Navigate to \texttt{/login} page.
+    \item \textbf{User Action:} Fill email and password (minimum 8 characters).
+    \item \textbf{User Action:} Click \textbf{``Create Account''} button.
+    \item \textbf{System Process:} Frontend sends \texttt{POST /api/auth/register} with credentials.
+    \item \textbf{Backend Validation:} 
+        \begin{itemize}
+            \item Check if email already exists (unique constraint).
+            \item Hash password using bcrypt.
+            \item Store user in SQLite auth database with role \texttt{user}.
+        \end{itemize}
+    \item \textbf{System Response:} Return user data (id, email, role).
+    \item \textbf{Frontend Action:} Auto-login after registration.
+    \item \textbf{Token Generation:} Backend creates JWT token (expires in 60 min).
+    \item \textbf{Storage:} Token saved in browser \texttt{localStorage}.
+    \item \textbf{Redirect:} User redirected to home page \texttt{/}.
+\end{enumerate}
+
+\subsubsection{Login Flow}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{User Action:} Enter email and password on \texttt{/login}.
+    \item \textbf{User Action:} Click \textbf{``Login''} button.
+    \item \textbf{System Process:} Frontend sends \texttt{POST /api/auth/login}.
+    \item \textbf{Backend Validation:}
+        \begin{itemize}
+            \item Verify email exists.
+            \item Compare password hash with bcrypt.
+        \end{itemize}
+    \item \textbf{Token Generation:} Create JWT token with user id and role.
+    \item \textbf{Storage:} Token saved in \texttt{localStorage}.
+    \item \textbf{Auth Wrapper:} All subsequent API calls include \texttt{Authorization: Bearer <token>} header.
+    \item \textbf{Session Management:} On 401 response, clear token and redirect to login.
+\end{enumerate}
+
+\subsubsection{Role-Based Access Control}
+
+\begin{itemize}
+    \item \textbf{User Role:} Can create projects, extract IFC, track components, export reports.
+    \item \textbf{Admin Role:} Can list all users, change user roles.
+    \item \textbf{Public Routes:} Health check, login, register, public component details (QR codes).
+\end{itemize}
+
+% --------------------------------------------------------
+\subsection{Extraction Module}
+% --------------------------------------------------------
+
+\subsubsection{IFC Upload and Analysis}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{User Action:} Click \textbf{``Upload IFC File''} button on home page \texttt{/}.
+    \item \textbf{System Process:} Browser opens file picker (accepts \texttt{.ifc} files).
+    \item \textbf{User Action:} Select IFC file from local machine.
+    \item \textbf{Frontend Validation:} Check file extension (must be \texttt{.ifc}).
+    \item \textbf{Upload Request:} Frontend sends \texttt{POST /api/upload} with file via multipart/form-data.
+    \item \textbf{Backend Processing:}
+        \begin{itemize}
+            \item Save file temporarily to disk.
+            \item Parse IFC using \texttt{ifcopenshell} library.
+            \item Extract building elements: Walls, Windows, Doors, Slabs, Stairs, Curtain Walls.
+            \item Extract properties: Height, Length, Thickness, Volume, Material, Floor/Level.
+            \item Convert dimensions from mm to meters (if value > 10).
+            \item Calculate sustainability scores: Recyclability (0-1) and Reusability (0-1).
+        \end{itemize}
+    \item \textbf{Data Enrichment:} Apply business rules based on material type.
+    \item \textbf{System Response:} Return JSON with elements array and summary statistics.
+    \item \textbf{Frontend Display:}
+        \begin{itemize}
+            \item Show summary cards (total elements, element types).
+            \item Display data table with columns: ID, Type, Floor, Material, Dimensions, Scores.
+            \item Show sustainability charts (recyclable percentage, average scores).
+        \end{itemize}
+    \item \textbf{Local Storage:} Results cached in browser IndexedDB for offline viewing.
+\end{enumerate}
+
+\subsubsection{Status Synchronization from Tracker}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Background Process:} After extraction, frontend calls \texttt{POST /api/public/statuses}.
+    \item \textbf{System Process:} Backend queries tracker database for component statuses.
+    \item \textbf{Data Merge:} If component exists in tracker, show its current status (e.g., ``dismantled'', ``stored'').
+    \item \textbf{Default Status:} If not tracked, show ``in\_building''.
+    \item \textbf{UI Update:} Status badges dynamically added to table rows.
+\end{enumerate}
+
+\subsubsection{Send to Tracker}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{User Action:} Click \textbf{``Send to Tracker''} button after extraction.
+    \item \textbf{User Action:} Enter project name (or accept default with date).
+    \item \textbf{System Process:} Frontend sends \texttt{POST /api/tracker/import} with:
+        \begin{itemize}
+            \item Array of components (ID, type, material, dimensions, status).
+            \item Project name.
+        \end{itemize}
+    \item \textbf{Backend Processing:}
+        \begin{itemize}
+            \item Create new project in SQLite tracker database with current \texttt{user\_id}.
+            \item Import components with status ``in\_building''.
+            \item If component ID already exists in another project, suffix with \texttt{\_\_p\{project\_id\}}.
+            \item Add initial status history entry: ``Import initial IFC''.
+        \end{itemize}
+    \item \textbf{System Response:} Return project ID, name, and count of imported components.
+    \item \textbf{Frontend Action:} Show success message and offer to navigate to Tracker.
+\end{enumerate}
+
+\subsubsection{PEMD Export}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{User Action:} Click \textbf{``Export PEMD''} button.
+    \item \textbf{System Process:} Backend generates report with:
+        \begin{itemize}
+            \item Material classification (concrete, steel, wood, glass, etc.).
+            \item Volume (m\textsuperscript{3}), Density (t/m\textsuperscript{3}), Mass (tonnes).
+            \item CERFA nomenclature categories.
+        \end{itemize}
+    \item \textbf{Format Options:} PDF (landscape A4) or CSV (semicolon-separated).
+    \item \textbf{Download:} File generated with timestamp and sent as attachment.
+\end{enumerate}
+
+% --------------------------------------------------------
+\subsection{Tracking Module}
+% --------------------------------------------------------
+
+\subsubsection{Project Management}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Navigation:} User clicks ``Tracking'' in sidebar.
+    \item \textbf{System Process:} Frontend loads Tracker page \texttt{/tracker}.
+    \item \textbf{API Call:} \texttt{GET /api/tracker/projects} (filtered by current user).
+    \item \textbf{Display:} Dropdown shows user's projects with component counts.
+    \item \textbf{IFC Source Upload:} User can upload original IFC file for 3D viewer.
+\end{enumerate}
+
+\subsubsection{Component Lifecycle Management}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{View Components:} Select project from dropdown.
+    \item \textbf{API Call:} \texttt{GET /api/tracker/components?project\_id=X}.
+    \item \textbf{Display:} Table with filters (status, type) and bulk actions.
+    \item \textbf{Status Update (Single):}
+        \begin{itemize}
+            \item Click component row to open detail page.
+            \item Click new status button (e.g., ``dismantled'').
+            \item If status requires location, prompt appears.
+            \item System logs change in status\_history table.
+        \end{itemize}
+    \item \textbf{Status Update (Bulk):}
+        \begin{itemize}
+            \item Select multiple components via checkboxes.
+            \item Click bulk action bar, choose new status.
+            \item System updates all selected components atomically.
+        \end{itemize}
+\end{enumerate}
+
+\subsubsection{QR Code Scanning (Field Operations)}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Generation:} In component detail, click to generate QR code.
+    \item \textbf{URL Encoding:} QR contains HTTPS URL with component ID (e.g., \texttt{/tracker/123/2O2Fr\$t4X7Zf8NOew3FKau}).
+    \item \textbf{Scan from Phone:} Worker scans QR at construction site.
+    \item \textbf{Public Access:} Page loads without requiring login (read-only mode).
+    \item \textbf{Banner Display:} Yellow warning banner ``Read-only --- Login to modify''.
+    \item \textbf{Login for Edit:} Click login button, authenticate, redirect back to component.
+    \item \textbf{Post-Login:} Edit controls appear (Change Status, Condition, etc.).
+\end{enumerate}
+
+\subsubsection{Metadata Management}
+
+\begin{itemize}
+    \item \textbf{Condition:} New, Good, Fair, Poor.
+    \item \textbf{Estimated Age:} Under 2 years, 2--10 years, 10--50 years, Over 50 years.
+    \item \textbf{Comment:} Free text notes.
+    \item \textbf{History:} Full audit trail of all status changes with timestamps.
+\end{itemize}
+
+\subsubsection{Exports}
+
+\begin{itemize}
+    \item \textbf{Enriched IFC:} Download IFC with status property sets embedded.
+    \item \textbf{PEM CSV:} Reuse diagnostic report (CERFA format).
+    \item \textbf{DI CSV:} Inert waste declaration.
+    \item \textbf{BTP Match PDF:} Reuse marketplace listing.
+\end{itemize}
+
+% --------------------------------------------------------
+\subsection{3D Visualization Module}
+% --------------------------------------------------------
+
+\subsubsection{IFC Loading}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Navigation:} User clicks ``3D Viewer'' in sidebar.
+    \item \textbf{Source Options:}
+        \begin{itemize}
+            \item Load from tracker project (IFC file stored on server).
+            \item Upload local IFC file directly.
+        \end{itemize}
+    \item \textbf{System Process:} 
+        \begin{itemize}
+            \item Load IFC geometry using \texttt{web-ifc-three} WASM parser.
+            \item Cache WASM files locally to avoid CDN issues.
+            \item Render 3D model with Three.js.
+        \end{itemize}
+\end{enumerate}
+
+\subsubsection{Element Interaction}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Hover:} Highlight element on mouse hover.
+    \item \textbf{Click:} Select element and show detail panel.
+    \item \textbf{Details Panel:} Shows:
+        \begin{itemize}
+            \item IFC Global ID, Type, Material.
+            \item Dimensions (converted mm $\rightarrow$ m).
+            \item Current tracker status (color-coded).
+            \item Sustainability scores.
+        \end{itemize}
+    \item \textbf{Color Coding:} Elements colored by status (e.g., green for reused, red for to recycle).
+    \item \textbf{Search:} Find elements by ID or type.
+\end{enumerate}
+
+\subsubsection{Status Visualization}
+
+\begin{itemize}
+    \item \textbf{In Building:} Blue.
+    \item \textbf{Dismantled:} Orange.
+    \item \textbf{In Transit:} Indigo.
+    \item \textbf{Stored:} Purple.
+    \item \textbf{Reused:} Green.
+    \item \textbf{To Recycle:} Red.
+\end{itemize}
+
+% --------------------------------------------------------
+\subsection{Data Flow and Security Architecture}
+% --------------------------------------------------------
+
+\subsubsection{Technology Stack}
+
+\begin{center}
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Layer} & \textbf{Technology} & \textbf{Purpose} \\
+\hline
+Frontend & Vanilla JS + Three.js & UI, 3D rendering \\
+Backend & FastAPI (Python) & REST API, business logic \\
+Auth DB & SQLite (SQLAlchemy) & Users, JWT tokens \\
+Tracker DB & SQLite (raw) & Projects, components, history \\
+File Storage & Disk + Docker volume & IFC files \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsubsection{Security Flow}
+
+\begin{enumerate}
+    \item All \texttt{/api/*} routes (except auth and public) require valid JWT.
+    \item Passwords hashed with bcrypt (adaptive cost factor).
+    \item SQLite auth database isolated from tracker database.
+    \item User-project isolation: users only see their own projects in lists.
+    \item Component read public: anyone with URL can view (for QR codes).
+    \item Component write protected: only owner can modify.
+\end{enumerate}
+
+\end{document}

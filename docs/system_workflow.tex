@@ -1,0 +1,315 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
+
+\geometry{margin=2.5cm}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{IFC Analyzer - System Workflow}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\definecolor{usercolor}{RGB}{59,130,246}
+\definecolor{systemcolor}{RGB}{16,185,129}
+\definecolor{dbcolor}{RGB}{139,92,246}
+\definecolor{processcolor}{RGB}{245,158,11}
+
+\titleformat{\section}{\Large\bfseries\color{usercolor}}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries\color{systemcolor}}{\thesubsection}{1em}{}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\Huge\bfseries IFC Analyzer\\[0.5cm]
+\Large Platform System Workflow\\[2cm]}
+{\large Technical Documentation\\[0.3cm]
+Version 1.0\\[3cm]}
+{\large June 2026}
+\vfill
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Authentication Module}
+% ============================================================
+
+\subsection{Registration Flow}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{User Action:} Navigate to \texttt{/login} page.
+    \item \textbf{User Action:} Fill email and password (min 8 characters).
+    \item \textbf{User Action:} Click \textbf{``Create Account''} button.
+    \item \textbf{System Process:} Frontend sends \texttt{POST /api/auth/register} with credentials.
+    \item \textbf{Backend Validation:} 
+        \begin{itemize}
+            \item Check if email already exists (unique constraint).
+            \item Hash password using bcrypt.
+            \item Store user in SQLite auth database with role \texttt{user}.
+        \end{itemize}
+    \item \textbf{System Response:} Return user data (id, email, role).
+    \item \textbf{Frontend Action:} Auto-login after registration.
+    \item \textbf{Token Generation:} Backend creates JWT token (expires in 60 min).
+    \item \textbf{Storage:} Token saved in browser \texttt{localStorage}.
+    \item \textbf{Redirect:} User redirected to home page \texttt{/}.
+\end{enumerate}
+
+\subsection{Login Flow}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{User Action:} Enter email and password on \texttt{/login}.
+    \item \textbf{User Action:} Click \textbf{``Login''} button.
+    \item \textbf{System Process:} Frontend sends \texttt{POST /api/auth/login}.
+    \item \textbf{Backend Validation:}
+        \begin{itemize}
+            \item Verify email exists.
+            \item Compare password hash with bcrypt.
+        \end{itemize}
+    \item \textbf{Token Generation:} Create JWT token with user id and role.
+    \item \textbf{Storage:} Token saved in \texttt{localStorage}.
+    \item \textbf{Auth Wrapper:} All subsequent API calls include \texttt{Authorization: Bearer <token>} header.
+    \item \textbf{Session Management:} On 401 response, clear token and redirect to login.
+\end{enumerate}
+
+\subsection{Role-Based Access Control}
+
+\begin{itemize}
+    \item \textbf{User Role:} Can create projects, extract IFC, track components, export reports.
+    \item \textbf{Admin Role:} Can list all users, change user roles.
+    \item \textbf{Public Routes:} Health check, login, register, public component details (QR codes).
+\end{itemize}
+
+% ============================================================
+\section{Extraction Module}
+% ============================================================
+
+\subsection{IFC Upload and Analysis}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{User Action:} Click \textbf{``Upload IFC File''} button on home page \texttt{/}.
+    \item \textbf{System Process:} Browser opens file picker (accepts \texttt{.ifc} files).
+    \item \textbf{User Action:} Select IFC file from local machine.
+    \item \textbf{Frontend Validation:} Check file extension (must be \texttt{.ifc}).
+    \item \textbf{Upload Request:} Frontend sends \texttt{POST /api/upload} with file via multipart/form-data.
+    \item \textbf{Backend Processing:}
+        \begin{itemize}
+            \item Save file temporarily to disk.
+            \item Parse IFC using \texttt{ifcopenshell} library.
+            \item Extract building elements: Walls, Windows, Doors, Slabs, Stairs, Curtain Walls.
+            \item Extract properties: Height, Length, Thickness, Volume, Material, Floor/Level.
+            \item Convert dimensions from mm to meters (if value > 10).
+            \item Calculate sustainability scores: Recyclability (0-1) and Reusability (0-1).
+        \end{itemize}
+    \item \textbf{Data Enrichment:} Apply business rules based on material type.
+    \item \textbf{System Response:} Return JSON with elements array and summary statistics.
+    \item \textbf{Frontend Display:}
+        \begin{itemize}
+            \item Show summary cards (total elements, element types).
+            \item Display data table with columns: ID, Type, Floor, Material, Dimensions, Scores.
+            \item Show sustainability charts (recyclable percentage, average scores).
+        \end{itemize}
+    \item \textbf{Local Storage:} Results cached in browser IndexedDB for offline viewing.
+\end{enumerate}
+
+\subsection{Status Synchronization from Tracker}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Background Process:} After extraction, frontend calls \texttt{POST /api/public/statuses}.
+    \item \textbf{System Process:} Backend queries tracker database for component statuses.
+    \item \textbf{Data Merge:} If component exists in tracker, show its current status (e.g., ``dismantled'', ``stored'').
+    \item \textbf{Default Status:} If not tracked, show ``in\_building''.
+    \item \textbf{UI Update:} Status badges dynamically added to table rows.
+\end{enumerate}
+
+\subsection{Send to Tracker}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{User Action:} Click \textbf{``Send to Tracker''} button after extraction.
+    \item \textbf{User Action:} Enter project name (or accept default with date).
+    \item \textbf{System Process:} Frontend sends \texttt{POST /api/tracker/import} with:
+        \begin{itemize}
+            \item Array of components (ID, type, material, dimensions, status).
+            \item Project name.
+        \end{itemize}
+    \item \textbf{Backend Processing:}
+        \begin{itemize}
+            \item Create new project in SQLite tracker database with current \texttt{user\_id}.
+            \item Import components with status ``in\_building''.
+            \item If component ID already exists in another project, suffix with \texttt{\_\_p\{project\_id\}}.
+            \item Add initial status history entry: ``Import initial IFC''.
+        \end{itemize}
+    \item \textbf{System Response:} Return project ID, name, and count of imported components.
+    \item \textbf{Frontend Action:} Show success message and offer to navigate to Tracker.
+\end{enumerate}
+
+\subsection{PEMD Export}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{User Action:} Click \textbf{``Export PEMD''} button.
+    \item \textbf{System Process:} Backend generates report with:
+        \begin{itemize}
+            \item Material classification (concrete, steel, wood, glass, etc.).
+            \item Volume (m\textsuperscript{3}), Density (t/m\textsuperscript{3}), Mass (tonnes).
+            \item CERFA nomenclature categories.
+        \end{itemize}
+    \item \textbf{Format Options:} PDF (landscape A4) or CSV (semicolon-separated).
+    \item \textbf{Download:} File generated with timestamp and sent as attachment.
+\end{enumerate}
+
+% ============================================================
+\section{Tracking Module}
+% ============================================================
+
+\subsection{Project Management}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Navigation:} User clicks ``Tracking'' in sidebar.
+    \item \textbf{System Process:} Frontend loads Tracker page \texttt{/tracker}.
+    \item \textbf{API Call:} \texttt{GET /api/tracker/projects} (filtered by current user).
+    \item \textbf{Display:} Dropdown shows user's projects with component counts.
+    \item \textbf{IFC Source Upload:} User can upload original IFC file for 3D viewer.
+\end{enumerate}
+
+\subsection{Component Lifecycle Management}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{View Components:} Select project from dropdown.
+    \item \textbf{API Call:} \texttt{GET /api/tracker/components?project\_id=X}.
+    \item \textbf{Display:} Table with filters (status, type) and bulk actions.
+    \item \textbf{Status Update (Single):}
+        \begin{itemize}
+            \item Click component row to open detail page.
+            \item Click new status button (e.g., ``dismantled'').
+            \item If status requires location, prompt appears.
+            \item System logs change in status\_history table.
+        \end{itemize}
+    \item \textbf{Status Update (Bulk):}
+        \begin{itemize}
+            \item Select multiple components via checkboxes.
+            \item Click bulk action bar, choose new status.
+            \item System updates all selected components atomically.
+        \end{itemize}
+\end{enumerate}
+
+\subsection{QR Code Scanning (Field Operations)}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Generation:} In component detail, click to generate QR code.
+    \item \textbf{URL Encoding:} QR contains HTTPS URL with component ID (e.g., \texttt{/tracker/123/2O2Fr\$t4X7Zf8NOew3FKau}).
+    \item \textbf{Scan from Phone:} Worker scans QR at construction site.
+    \item \textbf{Public Access:} Page loads without requiring login (read-only mode).
+    \item \textbf{Banner Display:} Yellow warning banner ``Read-only --- Login to modify''.
+    \item \textbf{Login for Edit:} Click login button, authenticate, redirect back to component.
+    \item \textbf{Post-Login:} Edit controls appear (Change Status, Condition, etc.).
+\end{enumerate}
+
+\subsection{Metadata Management}
+
+\begin{itemize}
+    \item \textbf{Condition:} New, Good, Fair, Poor.
+    \item \textbf{Estimated Age:} Under 2 years, 2--10 years, 10--50 years, Over 50 years.
+    \item \textbf{Comment:} Free text notes.
+    \item \textbf{History:} Full audit trail of all status changes with timestamps.
+\end{itemize}
+
+\subsection{Exports}
+
+\begin{itemize}
+    \item \textbf{Enriched IFC:} Download IFC with status property sets embedded.
+    \item \textbf{PEM CSV:} Reuse diagnostic report (CERFA format).
+    \item \textbf{DI CSV:} Inert waste declaration.
+    \item \textbf{BTP Match PDF:} Reuse marketplace listing.
+\end{itemize}
+
+% ============================================================
+\section{3D Visualization Module}
+% ============================================================
+
+\subsection{IFC Loading}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Navigation:} User clicks ``3D Viewer'' in sidebar.
+    \item \textbf{Source Options:}
+        \begin{itemize}
+            \item Load from tracker project (IFC file stored on server).
+            \item Upload local IFC file directly.
+        \end{itemize}
+    \item \textbf{System Process:} 
+        \begin{itemize}
+            \item Load IFC geometry using \texttt{web-ifc-three} WASM parser.
+            \item Cache WASM files locally to avoid CDN issues.
+            \item Render 3D model with Three.js.
+        \end{itemize}
+\end{enumerate}
+
+\subsection{Element Interaction}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Hover:} Highlight element on mouse hover.
+    \item \textbf{Click:} Select element and show detail panel.
+    \item \textbf{Details Panel:} Shows:
+        \begin{itemize}
+            \item IFC Global ID, Type, Material.
+            \item Dimensions (converted mm $\rightarrow$ m).
+            \item Current tracker status (color-coded).
+            \item Sustainability scores.
+        \end{itemize}
+    \item \textbf{Color Coding:} Elements colored by status (e.g., green for reused, red for to recycle).
+    \item \textbf{Search:} Find elements by ID or type.
+\end{enumerate}
+
+\subsection{Status Visualization}
+
+\begin{itemize}
+    \item \textbf{In Building:} Blue.
+    \item \textbf{Dismantled:} Orange.
+    \item \textbf{In Transit:} Indigo.
+    \item \textbf{Stored:} Purple.
+    \item \textbf{Reused:} Green.
+    \item \textbf{To Recycle:} Red.
+\end{itemize}
+
+% ============================================================
+\section{Data Flow Architecture}
+% ============================================================
+
+\subsection{Technology Stack}
+
+\begin{center}
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Layer} & \textbf{Technology} & \textbf{Purpose} \\
+\hline
+Frontend & Vanilla JS + Three.js & UI, 3D rendering \\
+Backend & FastAPI (Python) & REST API, business logic \\
+Auth DB & SQLite (SQLAlchemy) & Users, JWT tokens \\
+Tracker DB & SQLite (raw) & Projects, components, history \\
+File Storage & Disk + Docker volume & IFC files \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsection{Security Flow}
+
+\begin{enumerate}
+    \item All \texttt{/api/*} routes (except auth and public) require valid JWT.
+    \item Passwords hashed with bcrypt (cost factor adaptive).
+    \item SQLite auth database isolated from tracker database.
+    \item User-project isolation: users only see their own projects in lists.
+    \item Component read public: anyone with URL can view (for QR codes).
+    \item Component write protected: only owner can modify.
+\end{enumerate}
+
+\end{document}

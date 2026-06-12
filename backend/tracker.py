@@ -604,55 +604,6 @@ def get_component_project_id(component_id: str) -> Optional[int]:
 
 
 # ============================================================
-# PEMD DATA (CERFA — Éditeur interactif)
-# ============================================================
-
-PEMD_FIELDS = [
-    "pem_category", "pem_description", "pem_quantity", "pem_dimensions",
-    "pem_assembly_type", "pem_age", "pem_condition", "pem_hazardous",
-    "pem_materials", "pem_location", "pem_reuse_conditions",
-    "pem_tech_info", "pem_transport_precautions",
-]
-
-
-def get_pemd_components(project_id: int) -> List[Dict]:
-    """Retourne TOUS les composants du projet avec leurs données PEMD."""
-    init_db()
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.execute("""
-            SELECT * FROM components
-            WHERE project_id = ?
-            ORDER BY type, id
-        """, (project_id,))
-        return [_row_to_dict(r, cur) for r in cur.fetchall()]
-
-
-def update_pemd_data(component_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-    """Met à jour les champs PEMD (CERFA) d'un composant."""
-    init_db()
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute("SELECT id FROM components WHERE id = ?", (component_id,)).fetchone()
-        if not row:
-            raise KeyError(f"Composant introuvable : {component_id}")
-        sets, params = [], []
-        for field in PEMD_FIELDS:
-            if field in data:
-                sets.append(f"{field} = ?")
-                val = data[field]
-                if field in ("pem_hazardous", "pem_location", "pem_reuse_conditions", "pem_tech_info", "pem_transport_precautions"):
-                    params.append(1 if val else 0)
-                else:
-                    params.append(val if val is not None else None)
-        if not sets:
-            return {"id": component_id, "updated": 0}
-        sets.append("updated_at = datetime('now')")
-        params.append(component_id)
-        conn.execute(f"UPDATE components SET {', '.join(sets)} WHERE id = ?", params)
-        conn.commit()
-    return {"id": component_id, "updated": 1}
-
-
-# ============================================================
 # STATS
 # ============================================================
 
