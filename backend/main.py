@@ -24,12 +24,14 @@ from tracker import (
     update_component_meta, CONDITIONS_VALIDES, AGES_VALIDES,
     set_project_ifc, get_project_ifc,
     project_belongs_to_user, component_belongs_to_user,
+    get_pemd_components, update_pemd_data,
 )
 from ifc_exporter import export_ifc_with_statuses
 from reuse_csv import generate_reuse_csv
 from di_csv import generate_di_csv
 from btp_match_pdf import generate_btp_match_pdf
 from extraction_pemd_pdf import generate_extraction_pemd_pdf, generate_extraction_pemd_csv
+from pemd_pdf import generate_pemd_pdf
 from auth_db import init_auth_db
 from auth_routes import auth_router
 from auth_security import get_current_user
@@ -504,6 +506,65 @@ async def tracker_ages():
     return AGES_VALIDES
 
 
+# ============================================================
+# PEMD — Éditeur CERFA interactif
+# ============================================================
+
+class PemdUpdateRequest(BaseModel):
+    pem_category: Optional[str] = None
+    pem_description: Optional[str] = None
+    pem_quantity: Optional[str] = None
+    pem_dimensions: Optional[str] = None
+    pem_assembly_type: Optional[str] = None
+    pem_age: Optional[str] = None
+    pem_condition: Optional[str] = None
+    pem_hazardous: Optional[int] = None
+    pem_materials: Optional[str] = None
+    pem_location: Optional[int] = None
+    pem_reuse_conditions: Optional[int] = None
+    pem_tech_info: Optional[int] = None
+    pem_transport_precautions: Optional[int] = None
+
+
+@protected_api.get("/tracker/projects/{project_id}/pemd")
+async def tracker_pemd_components(project_id: int, current_user=Depends(get_current_user)):
+    """Liste les composants PEMD (à réutiliser) du projet avec leurs données CERFA."""
+    _verify_ownership(project_id, current_user.id)
+    return get_pemd_components(project_id)
+
+
+@protected_api.post("/tracker/component/{component_id}/pemd")
+async def tracker_update_pemd(component_id: str, req: PemdUpdateRequest, current_user=Depends(get_current_user)):
+    """Met à jour les champs PEMD (CERFA) d'un composant."""
+    _verify_component_ownership(component_id, current_user.id)
+    try:
+        return update_pemd_data(component_id, req.model_dump(exclude_unset=True))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Composant introuvable.")
+
+
+@protected_api.get("/tracker/projects/{project_id}/export-pemd-pdf")
+async def tracker_export_pemd_pdf(project_id: int, current_user=Depends(get_current_user)):
+    """Exporte le PDF PEMD (CERFA) avec le tableau de caractérisation."""
+    _verify_ownership(project_id, current_user.id)
+    components = get_pemd_components(project_id)
+    if not components:
+        raise HTTPException(status_code=404, detail="Aucun composant réutilisable trouvé.")
+    try:
+        pdf_bytes = generate_pemd_pdf(components)
+    except Exception as e:
+        import traceback
+        print("[export-pemd-pdf] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Échec PDF : {e}")
+    from datetime import datetime
+    filename = f"PEMD_projet{project_id}_{datetime.now().strftime('%Y-%m-%d')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @protected_api.post("/tracker/component/{component_id}/meta")
 async def tracker_update_meta(component_id: str, req: MetaUpdateRequest, current_user=Depends(get_current_user)):
     """Met à jour les métadonnées du composant (condition, commentaire, durée de vie, âge estimé)."""
@@ -639,6 +700,12 @@ async def tracker_project_ifc_raw(project_id: int, current_user=Depends(get_curr
     )
 
 # Nouvelle URL avec project_id (utilisée par les QR codes et le clic dans le tracker)
+@app.get("/pemd")
+async def pemd_editor_page():
+    """Page de l'éditeur PEMD CERFA."""
+    return FileResponse(os.path.join(FRONTEND_DIR, "pemd_editor.html"))
+
+
 @app.get("/tracker/{project_id:int}/{component_id}")
 async def tracker_detail_page_with_project(project_id: int, component_id: str):
     return FileResponse(os.path.join(FRONTEND_DIR, "tracker_detail.html"))

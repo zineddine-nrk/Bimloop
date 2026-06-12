@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PEMD Editor — IFC Analyzer</title>
+    <link rel="stylesheet" href="/static/assets/design.css?v=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .pemd-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: var(--shadow-xs);
+        }
+        .pemd-table thead {
+            background: var(--slate-900);
+            color: white;
+        }
+        .pemd-table thead th {
+            padding: 8px 6px;
+            font-weight: 600;
+            font-size: 11px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+        .pemd-table tbody td {
+            padding: 6px;
+            border: 1px solid var(--border);
+            text-align: center;
+            vertical-align: middle;
+        }
+        .pemd-table tbody tr:nth-child(even) {
+            background: var(--bg-muted);
+        }
+        .pemd-table tbody tr:hover {
+            background: var(--primary-50);
+        }
+        .pemd-input {
+            width: 100%;
+            padding: 4px 6px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            background: white;
+        }
+        .pemd-input:focus {
+            border-color: var(--primary-500);
+            outline: none;
+        }
+        .pemd-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .pemd-header-left {
+            background: #93a8c4;
+            color: var(--slate-900);
+        }
+        .pemd-header-right {
+            background: #8b8db0;
+            color: var(--slate-900);
+        }
+        .pemd-header-main {
+            background: var(--slate-800);
+        }
+        .pemd-section-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .save-indicator {
+            font-size: 11px;
+            color: var(--success-600);
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="appShell"></div>
+    <div id="appPage">
+        <div class="stack" style="padding:24px;">
+            <div class="row" style="justify-content:space-between;align-items:center;">
+                <div>
+                    <div class="text-muted text-sm">PEMD Editor</div>
+                    <h2>Tableau 1 — Caractérisation des PEM</h2>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-secondary" id="exportPdfBtn">
+                        <i data-lucide="file-text"></i> Export PDF
+                    </button>
+                    <button class="btn btn-secondary" id="exportCsvBtn">
+                        <i data-lucide="file-spreadsheet"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+
+            <div class="filters-row" style="margin-bottom:16px;">
+                <select id="projectSelect" class="filter-select">
+                    <option value="">Select a project...</option>
+                </select>
+            </div>
+
+            <div id="tableContainer">
+                <p class="text-muted" style="text-align:center;padding:48px;">
+                    Select a project to load PEM components.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/auth.js?v=1"></script>
+    <script src="/static/assets/layout.js"></script>
+    <script>
+        AppLayout.mount({
+            active: "tracking",
+            eyebrow: "Workspace",
+            title: "PEMD Editor",
+        });
+
+        const projectSelect = document.getElementById("projectSelect");
+        const tableContainer = document.getElementById("tableContainer");
+        const exportPdfBtn = document.getElementById("exportPdfBtn");
+        const exportCsvBtn = document.getElementById("exportCsvBtn");
+
+        let currentProjectId = null;
+        let components = [];
+
+        async function loadProjects() {
+            const res = await fetch("/api/tracker/projects");
+            if (!res.ok) return;
+            const projects = await res.json();
+            projectSelect.innerHTML = '<option value="">Select a project...</option>' +
+                projects.map(p => `<option value="${p.id}">${p.name} (${p.component_count} components)</option>`).join("");
+        }
+
+        async function loadPemd(projectId) {
+            currentProjectId = projectId;
+            const res = await fetch(`/api/tracker/projects/${projectId}/pemd`);
+            if (!res.ok) {
+                tableContainer.innerHTML = `<p class="text-muted" style="text-align:center;padding:48px;">Error loading PEMD data.</p>`;
+                return;
+            }
+            components = await res.json();
+            renderTable();
+        }
+
+        function renderTable() {
+            if (!components.length) {
+                tableContainer.innerHTML = `<p class="text-muted" style="text-align:center;padding:48px;">No reusable components found in this project.</p>`;
+                return;
+            }
+
+            const html = `
+            <div style="overflow-x:auto;">
+                <table class="pemd-table">
+                    <thead>
+                        <tr>
+                            <th class="pemd-header-main" colspan="9">Remplissez ces colonnes</th>
+                            <th class="pemd-header-main" colspan="5">Cochez la case pour indiquer si ces informations sont renseignées dans votre rapport de diagnostic (14)</th>
+                        </tr>
+                        <tr>
+                            <th class="pemd-header-left">Catégorie<br>(5)</th>
+                            <th class="pemd-header-left">Description<br>(6)</th>
+                            <th class="pemd-header-left">Quantité disponible<br>et unité appropriée<br>(7)</th>
+                            <th class="pemd-header-left">Dimensions<br>(8)</th>
+                            <th class="pemd-header-left">Type principal<br>d'assemblage<br>(9)</th>
+                            <th class="pemd-header-left">Âge estimé<br>(10)</th>
+                            <th class="pemd-header-left">État de conservation<br>ou de fonctionnement<br>estimé<br>(11)</th>
+                            <th class="pemd-header-left">Suspectez-vous la présence<br>de substances dangereuses<br>ou de polluant organique<br>persistant dans ce PEM ?<br>(12)</th>
+                            <th class="pemd-header-left">Matériaux<br>Constitutifs<br>(13)</th>
+                            <th class="pemd-header-right">Localisation<br>et fonction du PEM<br>dans le bâtiment<br>(15)</th>
+                            <th class="pemd-header-right">Conditions techniques<br>et économiques pour<br>permettre le réemploi<br>du PEM<br>(16)</th>
+                            <th class="pemd-header-right">Informations<br>techniques disponibles<br>(17)</th>
+                            <th class="pemd-header-right">Précautions de dépose,<br>transport et stockage<br>(18)</th>
+                            <th class="pemd-header-main">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${components.map((c, i) => `
+                        <tr data-id="${c.id}">
+                            <td><input class="pemd-input" data-field="pem_category" value="${c.pem_category || c.type || ''}"></td>
+                            <td><input class="pemd-input" data-field="pem_description" value="${c.pem_description || ''}"></td>
+                            <td><input class="pemd-input" data-field="pem_quantity" value="${c.pem_quantity || ''}"></td>
+                            <td><input class="pemd-input" data-field="pem_dimensions" value="${c.pem_dimensions || ''}"></td>
+                            <td><input class="pemd-input" data-field="pem_assembly_type" value="${c.pem_assembly_type || ''}"></td>
+                            <td>
+                                <select class="pem-input" data-field="pem_age" style="width:100%;padding:4px;font-size:12px;">
+                                    <option value=""></option>
+                                    <option value="Inférieur à 2 ans" ${c.pem_age === 'Inférieur à 2 ans' ? 'selected' : ''}>Under 2 years</option>
+                                    <option value="Entre 2 et 10 ans" ${c.pem_age === 'Entre 2 et 10 ans' ? 'selected' : ''}>2–10 years</option>
+                                    <option value="Entre 10 et 50 ans" ${c.pem_age === 'Entre 10 et 50 ans' ? 'selected' : ''}>10–50 years</option>
+                                    <option value="Supérieur à 50 ans" ${c.pem_age === 'Supérieur à 50 ans' ? 'selected' : ''}>Over 50 years</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select class="pem-input" data-field="pem_condition" style="width:100%;padding:4px;font-size:12px;">
+                                    <option value=""></option>
+                                    <option value="Neuf" ${c.pem_condition === 'Neuf' ? 'selected' : ''}>New</option>
+                                    <option value="Bon" ${c.pem_condition === 'Bon' ? 'selected' : ''}>Good</option>
+                                    <option value="Moyen" ${c.pem_condition === 'Moyen' ? 'selected' : ''}>Fair</option>
+                                    <option value="Mauvais" ${c.pem_condition === 'Mauvais' ? 'selected' : ''}>Poor</option>
+                                </select>
+                            </td>
+                            <td><input type="checkbox" class="pemd-checkbox" data-field="pem_hazardous" ${c.pem_hazardous ? 'checked' : ''}></td>
+                            <td><input class="pemd-input" data-field="pem_materials" value="${c.pem_materials || c.material || ''}"></td>
+                            <td><input type="checkbox" class="pemd-checkbox" data-field="pem_location" ${c.pem_location ? 'checked' : ''}></td>
+                            <td><input type="checkbox" class="pemd-checkbox" data-field="pem_reuse_conditions" ${c.pem_reuse_conditions ? 'checked' : ''}></td>
+                            <td><input type="checkbox" class="pemd-checkbox" data-field="pem_tech_info" ${c.pem_tech_info ? 'checked' : ''}></td>
+                            <td><input type="checkbox" class="pemd-checkbox" data-field="pem_transport_precautions" ${c.pem_transport_precautions ? 'checked' : ''}></td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="saveRow(this)">
+                                    <i data-lucide="save"></i>
+                                </button>
+                                <span class="save-indicator hidden"></span>
+                            </td>
+                        </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            `;
+            tableContainer.innerHTML = html;
+            if (window.lucide) lucide.createIcons();
+        }
+
+        async function saveRow(btn) {
+            const row = btn.closest("tr");
+            const id = row.dataset.id;
+            const data = {};
+            row.querySelectorAll("[data-field]").forEach(el => {
+                const field = el.dataset.field;
+                if (el.type === "checkbox") {
+                    data[field] = el.checked ? 1 : 0;
+                } else {
+                    data[field] = el.value || null;
+                }
+            });
+            btn.disabled = true;
+            const indicator = row.querySelector(".save-indicator");
+            indicator.textContent = "Saving...";
+            indicator.classList.remove("hidden");
+            try {
+                const res = await fetch(`/api/tracker/component/${encodeURIComponent(id)}/pemd`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(data),
+                });
+                if (!res.ok) throw new Error("Save failed");
+                indicator.textContent = "✓ Saved";
+                setTimeout(() => indicator.classList.add("hidden"), 2000);
+            } catch (e) {
+                indicator.textContent = "✗ Error";
+                indicator.style.color = "var(--danger-600)";
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        projectSelect.addEventListener("change", (e) => {
+            const pid = e.target.value;
+            if (pid) loadPemd(pid);
+            else tableContainer.innerHTML = `<p class="text-muted" style="text-align:center;padding:48px;">Select a project to load PEM components.</p>`;
+        });
+
+        exportPdfBtn.addEventListener("click", () => {
+            if (!currentProjectId) {
+                alert("Please select a project first.");
+                return;
+            }
+            window.location.href = `/api/tracker/projects/${currentProjectId}/export-pemd-pdf`;
+        });
+
+        exportCsvBtn.addEventListener("click", () => {
+            if (!currentProjectId) {
+                alert("Please select a project first.");
+                return;
+            }
+            window.location.href = `/api/tracker/projects/${currentProjectId}/export-reuse-csv`;
+        });
+
+        loadProjects();
+    </script>
+</body>
+</html>
