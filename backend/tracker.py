@@ -435,9 +435,11 @@ def update_component_meta(component_id: str,
 # ============================================================
 
 def get_statuses_by_ids(ids: List[str],
-                        project_id: Optional[int] = None) -> Dict[str, str]:
+                        project_id: Optional[int] = None,
+                        user_id: Optional[int] = None) -> Dict[str, str]:
     """Retourne {ifc_id: status} pour une liste d'IDs IFC.
     Si project_id est fourni, filtre sur ce projet.
+    Si user_id est fourni, filtre sur les projets de cet utilisateur.
     Sinon : prend le statut du composant le plus récemment mis à jour.
     Note : on matche soit l'id exact, soit la forme suffixée 'id__pX'.
     """
@@ -454,6 +456,15 @@ def get_statuses_by_ids(ids: List[str],
                        WHERE project_id = ? AND (id = ? OR id = ?)
                        LIMIT 1""",
                     (project_id, ifc_id, f"{ifc_id}__p{project_id}"),
+                ).fetchone()
+            elif user_id is not None:
+                # Filtre par les projets de l'utilisateur
+                row = conn.execute(
+                    """SELECT c.status FROM components c
+                       JOIN projects p ON c.project_id = p.id
+                       WHERE p.user_id = ? AND (c.id = ? OR c.id LIKE ?)
+                       ORDER BY c.updated_at DESC LIMIT 1""",
+                    (user_id, ifc_id, f"{ifc_id}__p%"),
                 ).fetchone()
             else:
                 # Statut le plus récent (toutes projets confondus)

@@ -725,7 +725,7 @@ async function fetchDbStatuses() {
     const ids = allElements.map(e => e.id).filter(Boolean);
     if (!ids.length) return;
     try {
-        const res = await fetch("/api/public/statuses", {
+        const res = await fetch("/api/tracker/statuses", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ids }),

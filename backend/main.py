@@ -384,9 +384,7 @@ async def tracker_export_project_ifc(project_id: int, current_user=Depends(get_c
 @protected_api.post("/tracker/statuses")
 async def tracker_statuses(req: StatusesRequest, current_user=Depends(get_current_user)):
     """Retourne {id: status} pour une liste d'IDs IFC (colonne Statut du tableau)."""
-    if req.project_id is not None:
-        _verify_ownership(req.project_id, current_user.id)
-    return get_statuses_by_ids(req.ids, project_id=req.project_id)
+    return get_statuses_by_ids(req.ids, project_id=req.project_id, user_id=current_user.id)
 
 
 @protected_api.post("/tracker/import")
