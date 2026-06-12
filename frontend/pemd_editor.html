@@ -159,7 +159,7 @@
 
         function renderTable() {
             if (!components.length) {
-                tableContainer.innerHTML = `<p class="text-muted" style="text-align:center;padding:48px;">No reusable components found in this project.</p>`;
+                tableContainer.innerHTML = `<p class="text-muted" style="text-align:center;padding:48px;">No components found in this project. Send components to Tracker first.</p>`;
                 return;
             }
 
@@ -189,29 +189,36 @@
                         </tr>
                     </thead>
                     <tbody>
-                        ${components.map((c, i) => `
+                        ${components.map((c, i) => {
+                            const dims = [];
+                            if (c.hauteur) dims.push(`H:${c.hauteur}m`);
+                            if (c.longueur) dims.push(`L:${c.longueur}m`);
+                            if (c.epaisseur) dims.push(`T:${c.epaisseur}m`);
+                            const dimStr = c.pem_dimensions || dims.join(' x ') || '';
+                            const qtyStr = c.pem_quantity || (c.net_volume ? `${c.net_volume} m³` : '');
+                            return `
                         <tr data-id="${c.id}">
                             <td><input class="pemd-input" data-field="pem_category" value="${c.pem_category || c.type || ''}"></td>
                             <td><input class="pemd-input" data-field="pem_description" value="${c.pem_description || ''}"></td>
-                            <td><input class="pemd-input" data-field="pem_quantity" value="${c.pem_quantity || ''}"></td>
-                            <td><input class="pemd-input" data-field="pem_dimensions" value="${c.pem_dimensions || ''}"></td>
+                            <td><input class="pemd-input" data-field="pem_quantity" value="${qtyStr}"></td>
+                            <td><input class="pemd-input" data-field="pem_dimensions" value="${dimStr}"></td>
                             <td><input class="pemd-input" data-field="pem_assembly_type" value="${c.pem_assembly_type || ''}"></td>
                             <td>
                                 <select class="pem-input" data-field="pem_age" style="width:100%;padding:4px;font-size:12px;">
                                     <option value=""></option>
-                                    <option value="Inférieur à 2 ans" ${c.pem_age === 'Inférieur à 2 ans' ? 'selected' : ''}>Under 2 years</option>
-                                    <option value="Entre 2 et 10 ans" ${c.pem_age === 'Entre 2 et 10 ans' ? 'selected' : ''}>2–10 years</option>
-                                    <option value="Entre 10 et 50 ans" ${c.pem_age === 'Entre 10 et 50 ans' ? 'selected' : ''}>10–50 years</option>
-                                    <option value="Supérieur à 50 ans" ${c.pem_age === 'Supérieur à 50 ans' ? 'selected' : ''}>Over 50 years</option>
+                                    <option value="Inférieur à 2 ans" ${(c.pem_age || c.age_estimated) === 'Inférieur à 2 ans' ? 'selected' : ''}>Under 2 years</option>
+                                    <option value="Entre 2 et 10 ans" ${(c.pem_age || c.age_estimated) === 'Entre 2 et 10 ans' ? 'selected' : ''}>2–10 years</option>
+                                    <option value="Entre 10 et 50 ans" ${(c.pem_age || c.age_estimated) === 'Entre 10 et 50 ans' ? 'selected' : ''}>10–50 years</option>
+                                    <option value="Supérieur à 50 ans" ${(c.pem_age || c.age_estimated) === 'Supérieur à 50 ans' ? 'selected' : ''}>Over 50 years</option>
                                 </select>
                             </td>
                             <td>
                                 <select class="pem-input" data-field="pem_condition" style="width:100%;padding:4px;font-size:12px;">
                                     <option value=""></option>
-                                    <option value="Neuf" ${c.pem_condition === 'Neuf' ? 'selected' : ''}>New</option>
-                                    <option value="Bon" ${c.pem_condition === 'Bon' ? 'selected' : ''}>Good</option>
-                                    <option value="Moyen" ${c.pem_condition === 'Moyen' ? 'selected' : ''}>Fair</option>
-                                    <option value="Mauvais" ${c.pem_condition === 'Mauvais' ? 'selected' : ''}>Poor</option>
+                                    <option value="Neuf" ${(c.pem_condition || c.condition) === 'Neuf' ? 'selected' : ''}>New</option>
+                                    <option value="Bon" ${(c.pem_condition || c.condition) === 'Bon' ? 'selected' : ''}>Good</option>
+                                    <option value="Moyen" ${(c.pem_condition || c.condition) === 'Moyen' ? 'selected' : ''}>Fair</option>
+                                    <option value="Mauvais" ${(c.pem_condition || c.condition) === 'Mauvais' ? 'selected' : ''}>Poor</option>
                                 </select>
                             </td>
                             <td><input type="checkbox" class="pemd-checkbox" data-field="pem_hazardous" ${c.pem_hazardous ? 'checked' : ''}></td>
@@ -227,7 +234,7 @@
                                 <span class="save-indicator hidden"></span>
                             </td>
                         </tr>
-                        `).join('')}
+                        `}).join('')}
                     </tbody>
                 </table>
             </div>

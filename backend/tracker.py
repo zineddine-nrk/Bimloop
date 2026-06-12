@@ -616,12 +616,12 @@ PEMD_FIELDS = [
 
 
 def get_pemd_components(project_id: int) -> List[Dict]:
-    """Retourne les composants "à réutiliser" du projet avec leurs données PEMD."""
+    """Retourne TOUS les composants du projet avec leurs données PEMD."""
     init_db()
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute("""
             SELECT * FROM components
-            WHERE project_id = ? AND status IN ('réutilisé', 'à réutiliser')
+            WHERE project_id = ?
             ORDER BY type, id
         """, (project_id,))
         return [_row_to_dict(r, cur) for r in cur.fetchall()]
