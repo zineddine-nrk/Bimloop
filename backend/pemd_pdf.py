@@ -69,14 +69,14 @@ def _ps(size: int, align=TA_CENTER, bold=False, color=colors.black, font_name=No
         alignment=align,
         textColor=color,
         leading=size + 2,
-        wordWrap="CJK",
+        wordWrap="LTR",
     )
 
 
 S_TITLE = _ps(14, bold=True, color=colors.HexColor("#1e3a5f"))
 S_TH_MAIN = _ps(9, bold=True, color=colors.white)
-S_TH_LEFT = _ps(8, bold=True, color=colors.HexColor("#1e3a5f"))
-S_TH_RIGHT = _ps(8, bold=True, color=colors.HexColor("#1e3a5f"))
+S_TH_LEFT = _ps(7, bold=True, color=colors.HexColor("#1e3a5f"))
+S_TH_RIGHT = _ps(7, bold=True, color=colors.HexColor("#1e3a5f"))
 S_TD = _ps(8, align=TA_LEFT, color=colors.HexColor("#374151"))
 S_TD_C = _ps(8, align=TA_CENTER, color=colors.HexColor("#374151"))
 
@@ -113,10 +113,10 @@ def generate_pemd_pdf_from_data(rows: List[Dict[str, Any]], project_name: str = 
     doc = SimpleDocTemplate(
         buf,
         pagesize=landscape(A4),
-        rightMargin=1.2 * cm,
-        leftMargin=1.2 * cm,
-        topMargin=1.5 * cm,
-        bottomMargin=1.5 * cm,
+        rightMargin=0.8 * cm,
+        leftMargin=0.8 * cm,
+        topMargin=1.2 * cm,
+        bottomMargin=1.2 * cm,
     )
 
     story = []
@@ -181,11 +181,21 @@ def generate_pemd_pdf_from_data(rows: List[Dict[str, Any]], project_name: str = 
             Paragraph(_CHECK_SYMBOL if _to_bool(r.get("precautions")) else _UNCHECK_SYMBOL, S_TD_C),
         ])
 
-    page_w = landscape(A4)[0] - 2.4 * cm
+    page_w = landscape(A4)[0] - 1.6 * cm
     col_widths = [
-        page_w * 0.10, page_w * 0.12, page_w * 0.08, page_w * 0.08,
-        page_w * 0.08, page_w * 0.06, page_w * 0.08, page_w * 0.10,
-        page_w * 0.10, page_w * 0.08, page_w * 0.10, page_w * 0.08, page_w * 0.08,
+        page_w * 0.06,  # Catégorie
+        page_w * 0.09,  # Description
+        page_w * 0.07,  # Quantité  (header long)
+        page_w * 0.05,  # Dimensions
+        page_w * 0.05,  # Assemblage
+        page_w * 0.04,  # Âge estimé (court)
+        page_w * 0.07,  # État  (header long)
+        page_w * 0.10,  # Substances dangereuses (12)
+        page_w * 0.07,  # Matériaux
+        page_w * 0.07,  # Localisation (header long)
+        page_w * 0.08,  # Conditions réemploi (header long)
+        page_w * 0.07,  # Infos techniques
+        page_w * 0.08,  # Précautions (header long)
     ]
 
     full_data = header_data + data
@@ -205,8 +215,8 @@ def generate_pemd_pdf_from_data(rows: List[Dict[str, Any]], project_name: str = 
         ("BACKGROUND", (9, 1), (12, 1), PURPLE_LIGHT),
         ("TEXTCOLOR", (0, 1), (12, 1), colors.HexColor("#1e3a5f")),
         ("VALIGN", (0, 1), (12, 1), "MIDDLE"),
-        ("TOPPADDING", (0, 1), (12, 1), 4),
-        ("BOTTOMPADDING", (0, 1), (12, 1), 4),
+        ("TOPPADDING", (0, 1), (12, 1), 6),
+        ("BOTTOMPADDING", (0, 1), (12, 1), 6),
         ("LEFTPADDING", (0, 1), (12, 1), 3),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#1e3a5f")),
         ("VALIGN", (0, 2), (-1, -1), "MIDDLE"),

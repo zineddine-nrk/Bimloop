@@ -1,25 +1,28 @@
 """
-Génération du CSV « Déchets inertes (DI) » selon le formulaire CERFA PEMD.
+Génération du CSV et des données groupées « Déchets inertes (DI) » selon le formulaire CERFA PEMD.
 
 Périmètre :
 - On ne compte QUE les éléments dont le matériau correspond à l'une des
-  10 catégories DI réglementaires (béton, briques, tuiles, verre, etc.).
+  catégories DI réglementaires (béton, briques, tuiles, verre, etc.).
 - On ne compte QUE les éléments dont le statut tracker est « à recycler »
   ou « à réutiliser » (les autres ne partent pas en DI).
 
-Colonnes remplies :
+Colonnes (structure CERFA complète) :
   - Catégorie
+  - Code déchet
   - Quantité estimée → Masse (tonnes), Volume (m³, optionnel)
-  - % Réutilisation
-  - % Recyclable
-Toutes les autres colonnes sont laissées vides (non déductibles depuis l'IFC).
+  - Destination (21) : filières et exutoires identifiés (checkbox)
+  - Valorisation matière (22) : % Réutilisation, % Recyclable, % Remblayage
+  - Valorisation énergétique : % À incinérer avec valorisation énergétique
+  - Élimination (22) : % Incinération sans valorisation, % Non valorisable
+  - Conditions techniques (24) : checkbox
 """
 from __future__ import annotations
 
 import csv
 import io
 from collections import defaultdict
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 
 from tracker import get_all_components, get_project_ifc, get_project
 
@@ -50,12 +53,17 @@ DI_CATEGORIES: List[Dict] = [
     },
     {
         "label": "Mélanges de béton, tuiles et céramique ne contenant pas de substances dangereuses",
-        "keywords": [],  # non auto-détectable de façon fiable
+        "keywords": [],
         "density": 2200,
     },
     {
         "label": "Verre (sans cadre ou montant de fenêtres)",
         "keywords": ["verre", "glass"],
+        "density": 2500,
+    },
+    {
+        "label": "Verre (triés)",
+        "keywords": [],
         "density": 2500,
     },
     {
@@ -85,7 +93,8 @@ DI_CATEGORIES: List[Dict] = [
     },
 ]
 
-CSV_HEADERS = [
+# Headers CERFA complets
+DI_CSV_HEADERS = [
     "Catégorie",
     "Code déchet",
     "Masse estimée (tonnes)",
@@ -110,16 +119,12 @@ def _norm(s: Optional[str]) -> str:
 
 
 def _classify(material: str) -> Optional[int]:
-    """Retourne l'index de la catégorie DI correspondant au matériau, ou None.
-
-    On évite les faux positifs en testant les libellés les plus spécifiques
-    avant les plus génériques (ex. 'laine de verre' avant 'verre').
-    """
+    """Retourne l'index de la catégorie DI correspondant au matériau, ou None."""
     m = _norm(material)
     if not m:
         return None
-    # Spécifiques d'abord (laine/fibre de verre, emballage verre)
-    priority_order = [8, 9, 5, 6, 7, 2, 1, 0, 4]  # indices dans DI_CATEGORIES
+    # Spécifiques d'abord
+    priority_order = [9, 10, 4, 6, 7, 8, 2, 1, 0, 3]
     for i in priority_order:
         for kw in DI_CATEGORIES[i]["keywords"]:
             if kw in m:
@@ -138,7 +143,7 @@ def _safe_float(v) -> Optional[float]:
 
 
 def _compute_volume(ifc_data: Dict) -> Optional[float]:
-    """Volume en m³ : net_volume direct si dispo, sinon h*l*e (toutes en m)."""
+    """Volume en m³ : net_volume direct si dispo, sinon h*l*e."""
     nv = _safe_float(ifc_data.get("net_volume"))
     if nv:
         return nv
@@ -147,7 +152,6 @@ def _compute_volume(ifc_data: Dict) -> Optional[float]:
     e = _safe_float(ifc_data.get("epaisseur"))
     if h and l and e:
         return h * l * e
-    # Dernier recours : surface nette × épaisseur (cas des dalles sans h/l)
     na = _safe_float(ifc_data.get("net_area"))
     if na and e:
         return na * e
@@ -160,27 +164,24 @@ def _ifc_id_from_stored(stored_id: str) -> str:
     return stored_id
 
 
-def _fmt(v: float, decimals: int = 2) -> str:
+def _fmt(v: float, decimals: int = 1) -> str:
     if v is None:
         return ""
     return f"{round(v, decimals):.{decimals}f}".rstrip("0").rstrip(".") or "0"
 
 
 # ============================================================
-# GÉNÉRATION CSV
+# DONNÉES GROUPÉES (pour le modal DI)
 # ============================================================
 
-def generate_di_csv(project_id: int) -> bytes:
-    """Construit le CSV DI pour un projet. Retourne des bytes UTF-8 BOM."""
+def get_di_grouped_data(project_id: int) -> List[Dict]:
+    """Retourne les données DI groupées par catégorie pour le projet."""
     if get_project(project_id) is None:
         raise ValueError(f"Projet {project_id} introuvable.")
 
-    # 1) On prend TOUS les composants du projet (le total par catégorie sert de
-    #    base au calcul des pourcentages). Le statut détermine seulement la part
-    #    qui ira en réutilisation ou en recyclage.
     all_comps = get_all_components(project_id=project_id)
 
-    # 2) Enrichissement IFC pour les volumes (obligatoire pour avoir masse/volume)
+    # Enrichissement IFC
     ifc_info = get_project_ifc(project_id)
     ifc_index: Dict[str, Dict] = {}
     if ifc_info:
@@ -192,41 +193,23 @@ def generate_di_csv(project_id: int) -> bytes:
                 gid = el.get("id")
                 if gid:
                     ifc_index[gid] = el
-            print(f"[DI CSV] Projet {project_id} : IFC source chargé "
-                  f"({len(ifc_index)} éléments indexés depuis {ifc_info.get('filename')}).")
-        except Exception as e:
-            import traceback
-            print(f"[DI CSV] ÉCHEC parsing IFC source : {e}\n{traceback.format_exc()}")
+        except Exception:
             ifc_index = {}
-    else:
-        print(f"[DI CSV] Projet {project_id} : AUCUN IFC source uploadé "
-              f"→ masse/volume impossibles à calculer.")
 
-    # 3) Agrégation par catégorie DI.
-    # Pour CHAQUE composant matchant une catégorie inerte, on accumule :
-    #   - n_total  / vol_total  / mass_total   → base de référence de la catégorie
-    #   - n_reuse  / vol_reuse  / mass_reuse   → part « à réutiliser »
-    #   - n_recyc  / vol_recyc  / mass_recyc   → part « à recycler »
-    # Les pourcentages s'appuient en priorité sur la masse, puis le volume,
-    # puis le nombre d'éléments (selon ce qui est disponible).
-    per_cat: Dict[int, Dict[str, float]] = defaultdict(
+    # Agrégation par catégorie DI
+    per_cat: Dict[int, Dict] = defaultdict(
         lambda: {
-            "n_total": 0,    "vol_total": 0.0,  "mass_total": 0.0,
-            "n_reuse": 0,    "vol_reuse": 0.0,  "mass_reuse": 0.0,
-            "n_recyc": 0,    "vol_recyc": 0.0,  "mass_recyc": 0.0,
+            "n_total": 0, "vol_total": 0.0, "mass_total": 0.0,
+            "n_reuse": 0, "vol_reuse": 0.0, "mass_reuse": 0.0,
+            "n_recyc": 0, "vol_recyc": 0.0, "mass_recyc": 0.0,
         }
     )
 
-    n_matched = 0
-    n_with_vol = 0
     for comp in all_comps:
         cat_idx = _classify(comp.get("material") or "")
         if cat_idx is None:
-            continue  # matériau non inerte → on l'ignore complètement
-        n_matched += 1
-        # Source des dimensions : priorité aux valeurs stockées en DB lors de
-        # l'import (toujours dispo si l'import a inclus les dimensions),
-        # sinon repli sur l'IFC source uploadé.
+            continue
+
         ifc_data = ifc_index.get(_ifc_id_from_stored(comp.get("id", "")), {})
         merged = {
             "hauteur":    comp.get("hauteur")    or ifc_data.get("hauteur"),
@@ -236,10 +219,8 @@ def generate_di_csv(project_id: int) -> bytes:
             "net_volume": comp.get("net_volume") or ifc_data.get("net_volume"),
         }
         vol = _compute_volume(merged) or 0.0
-        if vol > 0:
-            n_with_vol += 1
         density = DI_CATEGORIES[cat_idx]["density"]
-        mass_t = (vol * density) / 1000.0  # kg → tonnes
+        mass_t = (vol * density) / 1000.0
 
         bucket = per_cat[cat_idx]
         bucket["n_total"]    += 1
@@ -255,33 +236,15 @@ def generate_di_csv(project_id: int) -> bytes:
             bucket["n_recyc"]    += 1
             bucket["vol_recyc"]  += vol
             bucket["mass_recyc"] += mass_t
-        # Les autres statuts (in_building, démonté, stocké…) restent dans le
-        # total mais ne comptent ni en réutilisation ni en recyclage.
 
-    # Récap par catégorie : utile pour diagnostiquer si les statuts sont bien pris
-    total_reuse = sum(b["n_reuse"] for b in per_cat.values())
-    total_recyc = sum(b["n_recyc"] for b in per_cat.values())
-    print(f"[DI CSV] Projet {project_id} : {len(all_comps)} composants total, "
-          f"{n_matched} matchent une catégorie DI, {n_with_vol} ont un volume calculable. "
-          f"Statuts marqués : {total_reuse} à réutiliser, {total_recyc} à recycler.")
-
-    # 4) Écriture CSV : on liste TOUTES les catégories DI (lignes vides si rien)
-    buf = io.StringIO()
-    writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
-    writer.writerow(CSV_HEADERS)
-
+    # Construction des rows (une par catégorie, y compris vides)
+    rows = []
     for idx, cat in enumerate(DI_CATEGORIES):
         agg = per_cat.get(idx)
         if agg and agg["n_total"] > 0:
-            # Masse / Volume affichés = total de la catégorie (tous les composants).
-            mass_str = _fmt(agg["mass_total"], 3) if agg["mass_total"] > 0 else ""
-            vol_str  = _fmt(agg["vol_total"],  2) if agg["vol_total"]  > 0 else ""
+            mass = agg["mass_total"]
+            vol = agg["vol_total"]
 
-            # Pourcentages : part de chaque destination par rapport au TOTAL de
-            # la catégorie. Exemple : 10 000 t de béton total et seulement 5 t
-            # marquées « à réutiliser » → % Réutilisation = 0,05 %, pas 100 %.
-            # Les éléments non marqués (in_building, démonté…) restent au
-            # dénominateur car ils représentent une masse non encore valorisée.
             if agg["mass_total"] > 0:
                 pct_reuse = agg["mass_reuse"] / agg["mass_total"] * 100
                 pct_recyc = agg["mass_recyc"] / agg["mass_total"] * 100
@@ -292,24 +255,115 @@ def generate_di_csv(project_id: int) -> bytes:
                 pct_reuse = agg["n_reuse"] / agg["n_total"] * 100
                 pct_recyc = agg["n_recyc"] / agg["n_total"] * 100
 
-            pct_reuse_str = f"{pct_reuse:.2f} %"
-            pct_recyc_str = f"{pct_recyc:.2f} %"
+            rows.append({
+                "idx": idx,
+                "categorie": cat["label"],
+                "code_dechet": "",
+                "masse": _fmt(mass) if mass > 0 else "",
+                "volume": _fmt(vol) if vol > 0 else "",
+                "filiere_exutoires": False,
+                "pct_reutilisation": f"{pct_reuse:.1f}" if pct_reuse > 0 else "",
+                "pct_recyclable": f"{pct_recyc:.1f}" if pct_recyc > 0 else "",
+                "pct_remblayage": "",
+                "pct_incineration_valo": "",
+                "pct_incineration_sans_valo": "",
+                "pct_non_valorisable": "",
+                "conditions_techniques": False,
+            })
         else:
-            mass_str = vol_str = pct_reuse_str = pct_recyc_str = ""
+            rows.append({
+                "idx": idx,
+                "categorie": cat["label"],
+                "code_dechet": "",
+                "masse": "",
+                "volume": "",
+                "filiere_exutoires": False,
+                "pct_reutilisation": "",
+                "pct_recyclable": "",
+                "pct_remblayage": "",
+                "pct_incineration_valo": "",
+                "pct_incineration_sans_valo": "",
+                "pct_non_valorisable": "",
+                "conditions_techniques": False,
+            })
+    return rows
 
+
+# ============================================================
+# EXPORT CSV
+# ============================================================
+
+def generate_di_csv_from_data(rows: List[Dict]) -> bytes:
+    """Génère le CSV DI à partir des données fournies."""
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(DI_CSV_HEADERS)
+
+    for row in rows:
         writer.writerow([
-            cat["label"],     # Catégorie
-            "",               # Code déchet ← non déductible
-            mass_str,         # Masse estimée (tonnes)
-            vol_str,          # Volume estimé (m³)
-            "",               # Filières et exutoires ← case à cocher humaine
-            pct_reuse_str,    # % Réutilisation
-            pct_recyc_str,    # % Recyclable
-            "",               # % Remblayage          ← non déductible
-            "",               # % Incin. avec valo    ← non déductible
-            "",               # % Incin. sans valo    ← non déductible
-            "",               # % Non valorisable     ← non déductible
-            "",               # Conditions techniques ← humaine
+            row.get("categorie", ""),
+            row.get("code_dechet", ""),
+            row.get("masse", ""),
+            row.get("volume", ""),
+            "Oui" if row.get("filiere_exutoires") else "",
+            row.get("pct_reutilisation", ""),
+            row.get("pct_recyclable", ""),
+            row.get("pct_remblayage", ""),
+            row.get("pct_incineration_valo", ""),
+            row.get("pct_incineration_sans_valo", ""),
+            row.get("pct_non_valorisable", ""),
+            "Oui" if row.get("conditions_techniques") else "",
         ])
 
+    return b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")
+
+
+def generate_di_csv(project_id: int) -> bytes:
+    """Construit le CSV DI pour un projet (rétrocompatibilité)."""
+    rows = get_di_grouped_data(project_id)
+    return generate_di_csv_from_data(rows)
+
+
+# ============================================================
+# EXPORT CSV MULTI-TABLEAUX
+# ============================================================
+
+TABLE_LABELS = {
+    "di": "Déchets inertes",
+    "dndni": "Déchets non dangereux non inertes (DNDNI)",
+    "equipement": "Déchets d'équipements",
+    "dd": "Déchets dangereux (DD)",
+    "annexe": "Tableau annexe",
+}
+
+
+def generate_multi_table_csv(tables: Dict[str, List[Dict]]) -> bytes:
+    """Génère un CSV avec plusieurs sections (une par tableau)."""
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+    first = True
+    for key in ["di", "dndni", "equipement", "dd", "annexe"]:
+        rows = tables.get(key)
+        if not rows:
+            continue
+        if not first:
+            writer.writerow([])
+        writer.writerow([TABLE_LABELS.get(key, key)])
+        writer.writerow(DI_CSV_HEADERS)
+        for row in rows:
+            writer.writerow([
+                row.get("categorie", ""),
+                row.get("code_dechet", ""),
+                row.get("masse", ""),
+                row.get("volume", ""),
+                "Oui" if row.get("filiere_exutoires") else "",
+                row.get("pct_reutilisation", ""),
+                row.get("pct_recyclable", ""),
+                row.get("pct_remblayage", ""),
+                row.get("pct_incineration_valo", ""),
+                row.get("pct_incineration_sans_valo", ""),
+                row.get("pct_non_valorisable", ""),
+                "Oui" if row.get("conditions_techniques") else "",
+            ])
+        first = False
     return b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")

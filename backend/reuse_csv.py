@@ -97,7 +97,7 @@ def _fmt_num(v) -> str:
         f = float(v)
         if f == int(f):
             return str(int(f))
-        return f"{f:.2f}".rstrip("0").rstrip(".")
+        return f"{f:.1f}".rstrip("0").rstrip(".")
     except (TypeError, ValueError):
         return str(v)
 
@@ -135,7 +135,7 @@ def _quantite(group: List[Dict], unit: str, count: int) -> str:
                 except (TypeError, ValueError):
                     pass
         if valid:
-            return f"{round(total, 2)} m² ({count} éléments)"
+            return f"{round(total, 1)} m² ({count} éléments)"
         return f"{count} éléments"
 
     if unit == "ml":
@@ -157,7 +157,7 @@ def _quantite(group: List[Dict], unit: str, count: int) -> str:
                 try: total += float(v); valid = True
                 except (TypeError, ValueError): pass
         if valid:
-            return f"{round(total, 3)} m³ ({count} éléments)"
+            return f"{round(total, 1)} m³ ({count} éléments)"
         return f"{count} éléments"
 
     # Unitaire
@@ -205,10 +205,10 @@ def _infos_techniques(group: List[Dict], comments: List[str], lifespans: List[in
     bits = []
     areas = [float(el["net_area"]) for el in group if el.get("net_area") not in (None, "")]
     if areas:
-        bits.append(f"Surface unitaire moy. : {round(sum(areas)/len(areas), 2)} m²")
+        bits.append(f"Surface unitaire moy. : {round(sum(areas)/len(areas), 1)} m²")
     vols = [float(el["net_volume"]) for el in group if el.get("net_volume") not in (None, "")]
     if vols:
-        bits.append(f"Volume unitaire moy. : {round(sum(vols)/len(vols), 3)} m³")
+        bits.append(f"Volume unitaire moy. : {round(sum(vols)/len(vols), 1)} m³")
     valid_ls = [int(x) for x in lifespans if x and int(x) > 0]
     if valid_ls:
         bits.append(f"Durée de vie restante estimée : {min(valid_ls)}–{max(valid_ls)} mois")

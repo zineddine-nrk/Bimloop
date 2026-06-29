@@ -25,7 +25,6 @@ const tableBody = document.getElementById("tableBody");
 const noResultsMsg = document.getElementById("noResultsMsg");
 const exportAllPdfBtn = document.getElementById("exportAllPdfBtn");
 const exportTypePdfBtn = document.getElementById("exportTypePdfBtn");
-const exportPemdBtn    = document.getElementById("exportPemdBtn");
 const sendToTrackerBtn = document.getElementById("sendToTrackerBtn");
 const uploadCard = document.querySelector(".upload-card");
 
@@ -177,45 +176,6 @@ async function restoreLastExtractionIfAny() {
 
 exportAllPdfBtn.addEventListener("click",  e => showFormatPicker(e, exportAllToCsv,  () => exportAllToPdf()));
 exportTypePdfBtn.addEventListener("click", e => showFormatPicker(e, exportTypeToCsv, () => exportTypeToPdf()));
-exportPemdBtn.addEventListener("click",   e => showFormatPicker(e, () => exportPemdExtraction("csv"), () => exportPemdExtraction("pdf")));
-
-async function exportPemdExtraction(format) {
-    if (!allElements || allElements.length === 0) {
-        alert("No elements to export. Analyze an IFC file first.");
-        return;
-    }
-    const btn  = exportPemdBtn;
-    const orig = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = `<i data-lucide="loader-2"></i> Generating…`;
-    if (window.lucide) lucide.createIcons();
-    try {
-        const res = await fetch("/api/export-pemd-extraction", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ elements: allElements, format, project_label: "" }),
-        });
-        if (!res.ok) {
-            let msg = `HTTP ${res.status}`;
-            try { const j = await res.json(); msg = j.detail || msg; } catch {}
-            alert(`PEMD export error: ${msg}`);
-            return;
-        }
-        const cd  = res.headers.get("Content-Disposition") || "";
-        const m   = cd.match(/filename="?([^"]+)"?/);
-        const ext = format === "csv" ? ".csv" : ".pdf";
-        const filename = m ? m[1] : `pemd_extraction${ext}`;
-        const blob = await res.blob();
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement("a");
-        a.href = url; a.download = filename; a.click();
-        URL.revokeObjectURL(url);
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = orig;
-        if (window.lucide) lucide.createIcons();
-    }
-}
 
 function toCsvCell(value) {
     const str = typeof value === "string" ? value.replace(/<[^>]*>/g, "") : String(value ?? "");

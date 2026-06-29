@@ -28,9 +28,10 @@ from tracker import (
 from ifc_exporter import export_ifc_with_statuses
 from reuse_csv import generate_reuse_csv, get_pemd_grouped_data, generate_reuse_csv_from_data
 from pemd_pdf import generate_pemd_pdf_from_data
-from di_csv import generate_di_csv
+from di_csv import generate_di_csv, get_di_grouped_data, generate_di_csv_from_data
+from di_pdf import generate_di_pdf
 from btp_match_pdf import generate_btp_match_pdf
-from extraction_pemd_pdf import generate_extraction_pemd_pdf, generate_extraction_pemd_csv
+
 from auth_db import init_auth_db
 from auth_routes import auth_router
 from auth_security import get_current_user
@@ -151,40 +152,6 @@ class TablePdfRequest(BaseModel):
     headers: List[str]
     rows: List[List[str]]
     filename: Optional[str] = "export.pdf"
-
-
-class ExtractionPemdRequest(BaseModel):
-    elements: List[Dict[str, Any]]
-    format: str = "pdf"
-    project_label: Optional[str] = ""
-
-
-@protected_api.post("/export-pemd-extraction")
-async def export_pemd_extraction(req: ExtractionPemdRequest):
-    """Export PEMD (PDF ou CSV) de tous les composants depuis la page Extraction."""
-    from datetime import datetime
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    try:
-        if req.format == "csv":
-            content = generate_extraction_pemd_csv(req.elements)
-            filename = f"pemd_extraction_{date_str}.csv"
-            return Response(
-                content=content,
-                media_type="text/csv; charset=utf-8",
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-            )
-        else:
-            content = generate_extraction_pemd_pdf(req.elements, req.project_label or "")
-            filename = f"pemd_extraction_{date_str}.pdf"
-            return Response(
-                content=content,
-                media_type="application/pdf",
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-            )
-    except Exception as e:
-        import traceback
-        print("[export-pemd-extraction] ERREUR :\n" + traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Erreur export PEMD : {type(e).__name__} — {e}")
 
 
 @protected_api.post("/export-table-pdf")
@@ -514,6 +481,16 @@ class PemdExportRequest(BaseModel):
     format: str = "csv"
 
 
+class DiExportRequest(BaseModel):
+    rows: List[Dict[str, Any]]
+    format: str = "csv"
+
+
+class WasteExportRequest(BaseModel):
+    tables: Dict[str, List[Dict[str, Any]]]
+    format: str = "csv"
+
+
 @protected_api.get("/tracker/projects/{project_id}/pemd-grouped-data")
 async def tracker_pemd_grouped_data(project_id: int, current_user=Depends(get_current_user)):
     """Retourne les données PEMD groupées (CERFA) pour le projet."""
@@ -559,6 +536,90 @@ async def tracker_export_pemd(project_id: int, req: PemdExportRequest, current_u
         import traceback
         print("[export-pemd] ERREUR :\n" + traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Échec export PEMD : {e}")
+
+
+@protected_api.get("/tracker/projects/{project_id}/di-grouped-data")
+async def tracker_di_grouped_data(project_id: int, current_user=Depends(get_current_user)):
+    """Retourne les données DI groupées (CERFA) pour le projet."""
+    _verify_ownership(project_id, current_user.id)
+    try:
+        return get_di_grouped_data(project_id)
+    except Exception as e:
+        import traceback
+        print("[di-grouped-data] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Échec récupération données DI : {e}")
+
+
+@protected_api.post("/tracker/projects/{project_id}/export-di")
+async def tracker_export_di(project_id: int, req: DiExportRequest, current_user=Depends(get_current_user)):
+    """Exporte le CSV ou PDF DI (CERFA) avec les données modifiées par l'utilisateur."""
+    _verify_ownership(project_id, current_user.id)
+    if not req.rows:
+        raise HTTPException(status_code=400, detail="Aucune donnée à exporter.")
+    try:
+        from datetime import datetime
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        if req.format == "csv":
+            csv_bytes = generate_di_csv_from_data(req.rows)
+            filename = f"DI_projet{project_id}_{date_str}.csv"
+            return Response(
+                content=csv_bytes,
+                media_type="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        elif req.format == "pdf":
+            project = get_project(project_id)
+            project_name = project.get("name", "") if project else ""
+            pdf_bytes = generate_di_pdf(project_name, req.rows)
+            filename = f"DI_projet{project_id}_{date_str}.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Format non supporté. Utilisez 'csv' ou 'pdf'.")
+    except Exception as e:
+        import traceback
+        print("[export-di] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Échec export DI : {e}")
+
+
+@protected_api.post("/tracker/projects/{project_id}/export-waste")
+async def tracker_export_waste(project_id: int, req: WasteExportRequest, current_user=Depends(get_current_user)):
+    """Exporte le CSV ou PDF pour tous les tableaux de caractérisation des déchets."""
+    _verify_ownership(project_id, current_user.id)
+    if not req.tables:
+        raise HTTPException(status_code=400, detail="Aucune donnée à exporter.")
+    try:
+        from datetime import datetime
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        project = get_project(project_id)
+        project_name = project.get("name", "") if project else ""
+        if req.format == "csv":
+            from di_csv import generate_multi_table_csv
+            csv_bytes = generate_multi_table_csv(req.tables)
+            filename = f"dechets_projet{project_id}_{date_str}.csv"
+            return Response(
+                content=csv_bytes,
+                media_type="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        elif req.format == "pdf":
+            from di_pdf import generate_multi_table_pdf
+            pdf_bytes = generate_multi_table_pdf(project_name, req.tables)
+            filename = f"dechets_projet{project_id}_{date_str}.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Format non supporté. Utilisez 'csv' ou 'pdf'.")
+    except Exception as e:
+        import traceback
+        print("[export-waste] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Échec export déchets : {e}")
 
 
 @protected_api.post("/tracker/component/{component_id}/meta")

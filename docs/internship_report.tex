@@ -11,6 +11,13 @@
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
 
+% Commande pour les numéros encerclés dans le texte
+\newcommand{\circled}[1]{\tikz[baseline=(char.base)]{\node[shape=circle,draw,inner sep=2pt,fill=white,font=\bfseries\small] (char) {#1};}}
+
+% Symboles case à cocher (Unicode)
+\newcommand{\checksymbol}{\textcolor{black}{\textbf{☑}}}
+\newcommand{\unchecksymbol}{\textcolor{black}{\textbf{☐}}}
+
 \geometry{margin=2.5cm}
 \pagestyle{fancy}
 \fancyhf{}
@@ -182,31 +189,84 @@ This section describes in detail the complete system workflow, covering the auth
 
 \subsubsection{IFC Upload and Analysis}
 
+The extraction process begins on the ``IFC Data Extraction'' page (Figure~\ref{fig:extraction-upload}). The user uploads an IFC file through the drag-and-drop interface or by using the file selector.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\textwidth]{screenshots/extraction-upload-annotated.png}
+    \caption{IFC Upload Interface — Step 1: File Selection and Analysis}
+    \label{fig:extraction-upload}
+\end{figure}
+
+\noindent\textbf{Interface elements (Figure~\ref{fig:extraction-upload}):}
+
 \begin{enumerate}[leftmargin=*]
-    \item \textbf{User Action:} Click \textbf{``Upload IFC File''} button on home page \texttt{/}.
-    \item \textbf{System Process:} Browser opens file picker (accepts \texttt{.ifc} files).
-    \item \textbf{User Action:} Select IFC file from local machine.
-    \item \textbf{Frontend Validation:} Check file extension (must be \texttt{.ifc}).
-    \item \textbf{Upload Request:} Frontend sends \texttt{POST /api/upload} with file via multipart/form-data.
-    \item \textbf{Backend Processing:}
-        \begin{itemize}
-            \item Save file temporarily to disk.
-            \item Parse IFC using \texttt{ifcopenshell} library.
-            \item Extract building elements: Walls, Windows, Doors, Slabs, Stairs, Curtain Walls.
-            \item Extract properties: Height, Length, Thickness, Volume, Material, Floor/Level.
-            \item Convert dimensions from mm to meters (if value > 10).
-            \item Calculate sustainability scores: Recyclability (0-1) and Reusability (0-1).
-        \end{itemize}
-    \item \textbf{Data Enrichment:} Apply business rules based on material type.
-    \item \textbf{System Response:} Return JSON with elements array and summary statistics.
-    \item \textbf{Frontend Display:}
-        \begin{itemize}
-            \item Show summary cards (total elements, element types).
-            \item Display data table with columns: ID, Type, Floor, Material, Dimensions, Scores.
-            \item Show sustainability charts (recyclable percentage, average scores).
-        \end{itemize}
-    \item \textbf{Local Storage:} Results cached in browser IndexedDB for offline viewing.
+    \item[\circled{1}] \textbf{Drag \& Drop Zone:} Central area where the user can drag and drop an \texttt{.ifc} file. The dashed border indicates the drop target.
+    \item[\circled{2}] \textbf{Select File Button:} Opens the system file picker to browse for an IFC file. Only files with the \texttt{.ifc} extension are accepted.
+    \item[\circled{3}] \textbf{Analyze Button:} Once a file is selected, this button triggers the upload and processing. It sends a \texttt{POST /api/upload} request with the file via multipart/form-data.
+    \item[\circled{4}] \textbf{Navigation Menu:} Left sidebar providing access to the three main modules: Extraction, Tracking, and 3D Viewer.
 \end{enumerate}
+
+\vspace{0.5cm}
+
+\noindent\textbf{Backend Processing:}
+
+Once the file is uploaded, the backend performs the following operations:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{File Validation:} Check file extension (must be \texttt{.ifc}).
+    \item \textbf{Temporary Storage:} Save file to disk for processing.
+    \item \textbf{IFC Parsing:} Parse the IFC model using \texttt{ifcopenshell}.
+    \item \textbf{Element Extraction:} Extract building elements including:
+        \begin{itemize}
+            \item Walls, Windows, Doors, Slabs, Stairs, Curtain Walls.
+            \item Properties: Height, Length, Thickness, Volume, Material, Floor/Level.
+        \end{itemize}
+    \item \textbf{Dimension Conversion:} Convert dimensions from mm to meters (if value > 10).
+    \item \textbf{Sustainability Scoring:} Calculate Recyclability (0--1) and Reusability (0--1) based on material type.
+    \item \textbf{Data Enrichment:} Apply business rules (e.g., concrete = low reusability, steel = high recyclability).
+\end{enumerate}
+
+\subsubsection{Extraction Results Display}
+
+After analysis, the platform displays the extracted data in a structured interface (Figure~\ref{fig:extraction-results}).
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\textwidth]{screenshots/extraction-results-annotated.png}
+    \caption{Extraction Results — Component List with Summary and Filters}
+    \label{fig:extraction-results}
+\end{figure}
+
+\noindent\textbf{Interface elements (Figure~\ref{fig:extraction-results}):}
+
+\begin{enumerate}[leftmargin=*]
+    \item[\circled{1}] \textbf{Navigation Menu:} Same sidebar as in Figure~\ref{fig:extraction-upload}, showing the active module (Extraction).
+    \item[\circled{2}--\circled{6}] \textbf{Summary Cards (Breakdown by Type):} Horizontal cards showing the count of each element type. The bar width is proportional to the count:
+        \begin{itemize}
+            \item \circled{2} Wall: 5668 elements (largest category)
+            \item \circled{3} Door: 375 elements
+            \item \circled{4} Slab: 41 elements
+            \item \circled{5} Stairs: 28 elements
+            \item \circled{6} Curtain wall: 25 elements
+        \end{itemize}
+    \item[\circled{7}] \textbf{Type Filters:} Clickable filter buttons to show only elements of a specific type (e.g., ``All'', ``Wall'', ``Door'', ``Slab'', ``Stairs'', ``Curtain wall'').
+    \item[\circled{8}] \textbf{Data Table Header:} Columns showing: NAME/ID, TYPE, FLOOR, MATERIAL, STATUS.
+    \item[\circled{9}--\circled{11}] \textbf{Data Rows:} Each row represents one IFC component with:
+        \begin{itemize}
+            \item \textbf{NAME/ID:} The IFC element identifier (e.g., ``Mur de base:UPEM\_Beton20+Enduit2+Isolant8\_ext:100827'')
+            \item \textbf{TYPE:} Mapped type (e.g., ``Wall'', ``Door'')
+            \item \textbf{FLOOR:} Building level (e.g., ``Palier\_R+3\_1'', ``R+4'')
+            \item \textbf{MATERIAL:} Material composition (e.g., ``Enduit, Beton, Isolant'', ``Cloison'')
+            \item \textbf{STATUS:} Tracker status if available, otherwise ``---''
+        \end{itemize}
+    \item[\circled{12}] \textbf{Export Buttons:} ``All'' (export all elements) and ``Selection'' (export filtered elements) in CSV or PDF format.
+    \item[\circled{13}] \textbf{Send to Tracker:} Primary action button that sends all extracted components to the Tracking module for lifecycle management.
+\end{enumerate}
+
+\vspace{0.5cm}
+
+\noindent\textbf{Local Storage:} Results are cached in the browser's IndexedDB for offline viewing and persistence across page navigations.
 
 \subsubsection{Status Synchronization from Tracker}
 
@@ -239,19 +299,317 @@ This section describes in detail the complete system workflow, covering the auth
     \item \textbf{Frontend Action:} Show success message and offer to navigate to Tracker.
 \end{enumerate}
 
-\subsubsection{PEMD Export}
+\subsubsection{PEMD Export (CERFA Tableau 1)}
+
+The PEMD (Produits, Équipements et Matériaux du Démantèlement) report is a regulatory requirement in France for documenting potentially reusable building materials. The platform automates the extraction of this information while allowing manual validation and editing before export.
+
+\paragraph{Preparing Components for PEMD Export}
+
+Before generating the PEMD report, the user must first identify and mark the components that are potentially reusable. This workflow is performed directly from the Tracking module (Figure~\ref{fig:tracking-pemd-prep}).
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\textwidth]{screenshots/tracking-pemd-prep-annotated.png}
+    \caption{Preparing Components for PEMD Export — Tracking Module Workflow}
+    \label{fig:tracking-pemd-prep}
+\end{figure}
+
+\noindent\textbf{Workflow steps (Figure~\ref{fig:tracking-pemd-prep}):}
 
 \begin{enumerate}[leftmargin=*]
-    \item \textbf{User Action:} Click \textbf{``Export PEMD''} button.
-    \item \textbf{System Process:} Backend generates report with:
+    \item[\circled{1}] \textbf{Filter by Type:} The user can filter the component list by type (e.g., only Doors, Slabs, Walls) using the ``All types'' dropdown. This helps focus on specific categories of reusable materials.
+    
+    \item[\circled{2}] \textbf{Select Components:} The user selects one or more components using the checkboxes in the table. The header checkbox allows bulk selection of all visible components. Individual checkboxes allow precise selection.
+    
+    \item[\circled{3}] \textbf{Set Status to ``To reuse'':} Once components are selected, a bulk action bar appears at the bottom. The user clicks \textbf{``To reuse''} (green button). This status is essential because the PEMD report only includes components marked as ``à réutiliser'' (to reuse). The system records this status change in the component history.
+    
+    \item[\circled{4}] \textbf{Add Metadata (Condition \& Age):} The user clicks the \textbf{``Info''} button (purple button) in the bulk action bar. A modal opens allowing the user to set:
         \begin{itemize}
-            \item Material classification (concrete, steel, wood, glass, etc.).
-            \item Volume (m\textsuperscript{3}), Density (t/m\textsuperscript{3}), Mass (tonnes).
-            \item CERFA nomenclature categories.
+            \item \textbf{Condition:} Neuf (New), Bon (Good), Moyen (Fair), or Mauvais (Poor).
+            \item \textbf{Estimated Age:} Under 2 years, 2--10 years, 10--50 years, or Over 50 years.
         \end{itemize}
-    \item \textbf{Format Options:} PDF (landscape A4) or CSV (semicolon-separated).
-    \item \textbf{Download:} File generated with timestamp and sent as attachment.
+        This metadata is stored in the tracker database and will be pre-filled in the PEMD report.
+    
+    \item[\circled{5}] \textbf{Export PEMD:} After marking components as ``To reuse'' and adding metadata, the user clicks the \textbf{``Export PEMD''} dropdown button in the toolbar and selects \textbf{``PEM report''}. This opens the interactive PEMD preview modal where the user can review and edit the data before final export.
 \end{enumerate}
+
+\vspace{0.3cm}
+
+\noindent\textbf{Key Design Point:} Only components with status ``à réutiliser'' are included in the PEMD report. This ensures the report exclusively contains materials that have been identified as potentially reusable, avoiding clutter from components that are still in building, already recycled, or destined for disposal.
+
+\paragraph{Grouped Data Generation}
+
+The system groups components by (type, material, dimensions) to produce CERFA-compliant rows:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Backend Processing:} When the user opens the PEMD report, the backend queries all components with status ``à réutiliser'' (to reuse) from the tracker database.
+    \item \textbf{IFC Enrichment:} For each component, the system retrieves stored dimensions (height, length, thickness) from the database. If the original IFC file was uploaded, it also parses the IFC model to extract additional geometric data (net volume, net area).
+    \item \textbf{Grouping:} Components are grouped by (type, material, dimensions\_key). This ensures that, for example, 20 aluminum windows of dimension X and 30 aluminum windows of dimension Y appear as two separate lines.
+    \item \textbf{Quantity Calculation:} Quantities are computed according to the CERFA unit convention:
+        \begin{itemize}
+            \item Walls, slabs, curtain walls $\rightarrow$ m\textsuperscript{2} (sum of net area).
+            \item Windows, doors, stairs $\rightarrow$ U (unit count).
+            \item Linear elements $\rightarrow$ ml (sum of length).
+            \item Volumetric elements $\rightarrow$ m\textsuperscript{3} (sum of net volume).
+        \end{itemize}
+    \item \textbf{Description Auto-fill:} The description field is auto-generated as ``Type in material — dimensions''.
+\end{enumerate}
+
+\paragraph{Interactive Preview and Edit Modal}
+
+Before exporting, the user can preview and edit the PEMD data in an interactive modal (Figure~\ref{fig:pemd-modal}). This modal displays all components marked as ``\`{a} r\'{e}utiliser'' in a CERFA-compliant table.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\textwidth]{screenshots/pemd-modal.png}
+    \caption{PEMD Report Preview and Edit Modal (CERFA Tableau 1)}
+    \label{fig:pemd-modal}
+\end{figure}
+
+\noindent\textbf{Component Grouping Logic}
+
+Components are not listed individually. Instead, the system groups them by a composite key: \textbf{(type, material, dimensions)}. This grouping is essential for the PEMD report because it mirrors how materials are actually inventoried on a construction site. For example:
+
+\begin{itemize}
+    \item 20 aluminum doors of size $2.0 \times 1.7$~m will appear as a single line with quantity ``20~U''.
+    \item 30 aluminum doors of size $2.85 \times 1.9$~m will appear as a \textit{separate} line.
+    \item 72 aluminum doors of size $2.0 \times 1.0$~m will form a third distinct group.
+\end{itemize}
+
+This differentiation by dimensions is crucial: merging different sizes into a single line would make the report unusable for deconstruction planning. The user can verify and, if necessary, correct the dimensions in the editable fields before export.
+
+\noindent\textbf{Editable Fields and User Modifications}
+
+The modal allows the user to review and modify every field before generating the final report:
+
+\begin{itemize}
+    \item \textbf{Category (5):} Automatically mapped from the component type to the official CERFA nomenclature. For example, ``Porte'' (Door) is mapped to ``5.5 Menuiseries int\'{e}rieures''. This mapping uses the standardized PEMD classification table and cannot be edited by the user, ensuring regulatory compliance.
+    
+    \item \textbf{Description (6):} Pre-filled with the component type, material, and dimensions (e.g., ``Porte en alu --- 2 $\times$ 1.7 m''). The user can edit this text to add more details or correct the auto-generated description.
+    
+    \item \textbf{Quantity (7):} Automatically computed based on the component type and available geometric data. The unit follows the CERFA convention:
+        \begin{itemize}
+            \item Doors, windows, stairs $\rightarrow$ count in units (U), e.g., ``3~U''.
+            \item Walls, slabs, curtain walls $\rightarrow$ area in m\textsuperscript{2}.
+            \item Linear elements $\rightarrow$ length in ml.
+            \item Volumetric elements $\rightarrow$ volume in m\textsuperscript{3}.
+        \end{itemize}
+        The quantity field is read-only because it is derived from the grouped component count.
+    
+    \item \textbf{Dimensions (8):} Pre-filled from IFC data or tracker storage (e.g., ``2 $\times$ 1.7 m (H$\times$L)''). If the IFC extraction was incomplete or approximate, the user can manually enter the correct dimensions.
+    
+    \item \textbf{Assembly Type (9):} Left empty by default because it cannot be reliably inferred from the IFC model. The user must fill this field manually (e.g., ``M\'{e}canique'', ``Chimique permanent'').
+    
+    \item \textbf{Age (10):} Pre-filled from tracker metadata if the user previously set an estimated age via the ``Info'' bulk action.
+    
+    \item \textbf{Condition (11):} Pre-filled from tracker metadata (Neuf, Bon, Moyen, Mauvais). The user can override this value directly in the modal.
+    
+    \item \textbf{Materials (13):} Pre-filled with the component material (e.g., ``Alu'').
+\end{itemize}
+
+\noindent\textbf{Checkboxes for CERFA Compliance (Columns 12, 15--18)}
+
+The right section of the table contains checkboxes that indicate whether specific information is present in the diagnostic report, exactly as required by the CERFA form:
+
+\begin{itemize}
+    \item \textbf{Column (12):} Suspect hazardous substances or persistent organic pollutants.
+    \item \textbf{Column (15):} Location and function of the PEM in the building.
+    \item \textbf{Column (16):} Technical and economic conditions enabling reuse.
+    \item \textbf{Column (17):} Technical information available.
+    \item \textbf{Column (18):} Precautions for removal, transport, and storage.
+\end{itemize}
+
+By default, all checkboxes are unchecked (empty). The user must actively check the boxes that apply to each component group. This design follows the strict rule of \textbf{no invented data}: the platform never guesses whether a material contains hazardous substances or whether reuse conditions are met.
+
+\noindent\textbf{Visual Style}
+
+The table header replicates the official CERFA color scheme: a blue section (\#1e3a5f) for the left columns labeled ``Remplissez ces colonnes'' and a purple section (\#8b8db0) for the right columns labeled ``Cochez la case pour indiquer si ces informations sont renseign\'{e}es dans votre rapport de diagnostic''. This visual separation helps users quickly identify which fields require manual input versus which fields require verification.
+
+\paragraph{Export Formats}
+
+After editing, the user can export the PEMD report in two formats:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Export CSV:}
+        \begin{itemize}
+            \item UTF-8 with BOM, semicolon-separated (French Excel standard).
+            \item Headers: (5) Catégorie, (6) Description, (7) Quantité, (8) Dimensions, (9) Assemblage, (10) Âge, (11) État, (12) Dangereuses, (13) Matériaux, (15) Localisation, (16) Conditions, (17) Infos techniques, (18) Précautions.
+            \item Checkbox columns: ``Oui'' if checked, empty if unchecked.
+        \end{itemize}
+    \item \textbf{Export PDF:}
+        \begin{itemize}
+            \item Landscape A4 with the exact CERFA table layout.
+            \item Uses TTF fonts (DejaVu Sans or Arial) to render Unicode checkbox symbols: \texttt{☑} for checked, \texttt{☐} for unchecked.
+            \item Color-coded header: blue for left columns, purple for right columns.
+            \item Alternating row colors (white / light gray) for readability.
+        \end{itemize}
+\end{enumerate}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\textwidth]{screenshots/pemd-pdf.png}
+    \caption{Exported PEMD PDF (CERFA Tableau 1)}
+    \label{fig:pemd-pdf}
+\end{figure}
+
+\paragraph{Backend Implementation}
+
+The PEMD module is implemented in three layers:
+
+\begin{itemize}
+    \item \textbf{Data Layer (\texttt{reuse\_csv.py}):}
+        \begin{itemize}
+            \item \texttt{get\_pemd\_grouped\_data(project\_id)}: Queries the tracker database, groups components, and returns a list of dicts with all CERFA fields.
+            \item \texttt{generate\_reuse\_csv\_from\_data(rows)}: Accepts the modified rows and produces the CSV output.
+        \end{itemize}
+    \item \textbf{PDF Layer (\texttt{pemd\_pdf.py}):}
+        \begin{itemize}
+            \item \texttt{generate\_pemd\_pdf\_from\_data(rows)}: Uses ReportLab to generate the landscape PDF.
+            \item Detects and loads a TTF font with Unicode support (DejaVu Sans, Arial, or Segoe UI).
+            \item Converts boolean checkbox values robustly (handles bool, int, string).
+        \end{itemize}
+    \item \textbf{API Layer (\texttt{main.py}):}
+        \begin{itemize}
+            \item \texttt{GET /api/tracker/projects/\{id\}/pemd-grouped-data}: Returns grouped data as JSON.
+            \item \texttt{POST /api/tracker/projects/\{id\}/export-pemd}: Accepts modified rows and returns CSV or PDF.
+        \end{itemize}
+\end{itemize}
+
+\paragraph{Design Decision: Grouping by Dimensions}
+
+A key design choice was to differentiate components not only by type and material but also by dimensions. For example, 20 aluminum windows of size $1.2 \times 0.9$~m and 30 aluminum windows of size $2.0 \times 1.5$~m are listed as two separate PEMD entries. This ensures accurate quantity reporting and avoids the common pitfall of merging incompatible dimensions into a single line, which would make the PEMD report unusable for deconstruction planning.
+
+\paragraph{Design Decision: Editable Dimensions}
+
+Even when dimensions are extracted from the IFC model, the user can override them in the modal. This is important because IFC dimensions are sometimes approximate (e.g., generic family parameters) or expressed in different units. The editable field gives the user full control over the final report.
+
+\paragraph{Design Decision: No Data Invention}
+
+The system follows a strict rule: no invented data. Fields that cannot be reliably inferred from the IFC model or tracker metadata (e.g., assembly type, hazardous substances) are left empty by default. The user must manually fill them or check the corresponding box. This ensures the PEMD report remains accurate and compliant with regulatory requirements.
+
+\subsubsection{DI Export (CERFA Déchets Inertes)}
+
+The DI (Déchets Inertes) report is a regulatory requirement in France for documenting inert waste generated during building demolition or renovation. Unlike the PEMD report which focuses on potentially reusable components, the DI report tracks materials that are destined for recycling or disposal, such as concrete, bricks, tiles, glass, and bituminous mixtures. The platform automates the classification and quantification of these materials while allowing manual validation before export.
+
+\paragraph{Preparing Components for DI Export}
+
+Before generating the DI report, the user must first identify and mark the components that are destined for recycling or disposal. This workflow is performed directly from the Tracking module.
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Filter by Status:} The user filters the component list by status using the ``All statuses'' dropdown. To include components in the DI report, they must have the status ``\`{a} recycler'' (to recycle) or ``\`{a} r\'{e}utiliser'' (to reuse).
+    
+    \item \textbf{Select Components:} The user selects one or more components using the checkboxes in the table. The system supports bulk selection via the header checkbox.
+    
+    \item \textbf{Verify Material Classification:} The system automatically classifies each component into one of the 11 official CERFA DI categories based on its material (e.g., concrete $\rightarrow$ ``B\'{e}ton'', glass $\rightarrow$ ``Verre (sans cadre ou montant de fen\^{e}tres)''). The user can verify this classification in the component detail view.
+    
+    \item \textbf{Export DI:} After marking components with the appropriate status, the user clicks the \textbf{``Export DI''} button in the toolbar. This opens the interactive DI preview modal where the user can review and edit the data before final export.
+\end{enumerate}
+
+\noindent\textbf{Key Design Point:} Only components with status ``\`{a} recycler'' or ``\`{a} r\'{e}utiliser'' that match DI material keywords are included in the report. This ensures the report exclusively contains inert waste materials, excluding organic materials, metals, or hazardous waste which fall under different regulatory frameworks.
+
+\paragraph{Backend Processing}
+
+When the user opens the DI report, the backend performs the following operations:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Database Query:} The backend queries all components with status ``\`{a} recycler'' or ``\`{a} r\'{e}utiliser'' from the tracker database for the selected project.
+    
+    \item \textbf{IFC Enrichment:} For each component, the system retrieves the corresponding IFC element to extract geometric data (height, length, thickness, net volume, net area).
+    
+    \item \textbf{DI Classification:} Each component is classified into one of 11 CERFA DI categories using keyword matching on the material name:
+    \begin{itemize}
+        \item B\'{e}ton, Briques, Tuiles et c\'{e}ramiques
+        \item M\'{e}langes de b\'{e}ton, tuiles et c\'{e}ramique
+        \item Verre (sans cadre ou montant de fen\^{e}tres), Verre (tri\'{e}s)
+        \item M\'{e}lange bitumineux, Terres et cailloux
+        \item Terres et pierres, D\'{e}chets de mat\'{e}riaux \`{a} base de fibre et de verre
+        \item Emballage en verre
+    \end{itemize}
+    
+    \item \textbf{Mass Calculation:} The system computes the mass in tonnes using the formula:
+    \[
+    \text{Mass (tonnes)} = \frac{\text{Volume (m}^3) \times \text{Density (kg/m}^3)}{1000}
+    \]
+    Category-specific default densities are applied (e.g., 2400~kg/m$^3$ for concrete, 2500~kg/m$^3$ for glass).
+    
+    \item \textbf{Aggregation by Category:} Components are grouped by DI category. Unlike the PEMD report which groups by (type, material, dimensions), the DI report aggregates all components of the same material category into a single line. This reflects the regulatory requirement to report waste totals per category rather than per individual component.
+    
+    \item \textbf{Percentage Distribution:} Based on the component statuses within each category, the system calculates:
+    \begin{itemize}
+        \item \% R\'{e}utilisation (from components marked ``\`{a} r\'{e}utiliser'')
+        \item \% Recyclable (from components marked ``\`{a} recycler'')
+    \end{itemize}
+    These percentages are computed proportionally by mass (or by volume if mass is zero, or by count if both are zero).
+\end{enumerate}
+
+\paragraph{Preview and Edit Modal}
+
+Before exporting, the user can preview and edit the DI data in an interactive modal. This modal displays all DI categories in a CERFA-compliant table with the following structure:
+
+\begin{itemize}
+    \item \textbf{Identification section:} Category name, waste code, estimated mass (tonnes), estimated volume (m$^3$)
+    \item \textbf{Destination (21):} Checkbox for ``Fili\`{e}res et exutoires identifi\'{e}s''
+    \item \textbf{Valorisation (22):} \% R\'{e}utilisation, \% Recyclable, \% Remblayage, \% Valorisation \'{e}nerg\'{e}tique
+    \item \textbf{\'{E}limination (22):} \% Incin\'{e}ration sans VE, \% Non valorisable
+    \item \textbf{Conditions techniques (24):} Checkbox for identified economic and technical conditions
+\end{itemize}
+
+\noindent\textbf{Editable Fields:}
+\begin{itemize}
+    \item \textbf{Waste Code:} The user can enter the official waste code (e.g., 170101 for concrete).
+    \item \textbf{Mass and Volume:} Pre-filled from IFC calculations but editable to correct estimation errors.
+    \item \textbf{Percentage Fields:} All percentage columns are editable. The user can adjust the distribution between reuse, recycling, landfill, and energy recovery.
+    \item \textbf{Checkboxes:} ``Fili\`{e}res identifi\'{e}es'' (21) and ``Conditions techniques'' (24) are unchecked by default. The user must actively check them to indicate that this information is documented in the diagnostic report.
+\end{itemize}
+
+\noindent\textbf{Design Decision: Category-First Grouping}
+
+The DI report uses a fundamentally different grouping strategy than the PEMD report. While PEMD groups by (type, material, dimensions) to preserve individual component identity for reuse planning, DI groups strictly by material category. This is because the CERFA DI form is designed for waste accounting at the category level, not for tracking individual demolition pieces. For example, all concrete slabs, walls, and columns are merged into a single ``B\'{e}ton'' line with their total mass.
+
+\paragraph{Export Formats}
+
+After editing, the user can export the DI report in two formats:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{CSV Export:} A semicolon-delimited UTF-8 file with BOM, compatible with Excel and LibreOffice. The CSV includes all 12 CERFA columns.
+    
+    \item \textbf{PDF Export:} A landscape A4 PDF with the exact CERFA table layout. The PDF features:
+    \begin{itemize}
+        \item Three-level header structure matching the official form
+        \item Color-coded sections: blue for identification, green for valorisation, red for \'{e}limination
+        \item Unicode checkboxes (\checksymbol / \unchecksymbol) for boolean fields
+        \item Automatic text wrapping for long category names
+        \item A footer note reminding that percentages must sum to 100\% per category
+    \end{itemize}
+\end{enumerate}
+
+\paragraph{Technical Implementation}
+
+The DI module is implemented in three layers:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Data Layer (\texttt{di\_csv.py}):}
+    \begin{itemize}
+        \item \texttt{DI\_CATEGORIES}: A list of 11 category definitions with labels, material keywords, and default densities.
+        \item \texttt{get\_di\_grouped\_data(project\_id)}: Queries components, classifies them by DI category, computes masses and volumes, and returns a list of dicts with all CERFA fields.
+        \item \texttt{generate\_di\_csv\_from\_data(rows)}: Produces the semicolon-delimited CSV with UTF-8 BOM.
+    \end{itemize}
+    
+    \item \textbf{PDF Layer (\texttt{di\_pdf.py}):}
+    \begin{itemize}
+        \item \texttt{generate\_di\_pdf(project\_name, rows)}: Uses ReportLab to generate the landscape PDF with the three-level CERFA header structure, color-coded backgrounds, and automatic text wrapping via \texttt{Paragraph} objects.
+    \end{itemize}
+    
+    \item \textbf{API Layer (\texttt{main.py}):}
+    \begin{itemize}
+        \item \texttt{GET /api/tracker/projects/\{id\}/di-grouped-data}: Returns grouped DI data as JSON.
+        \item \texttt{POST /api/tracker/projects/\{id\}/export-di}: Accepts modified rows and returns CSV or PDF.
+    \end{itemize}
+\end{enumerate}
+
+\paragraph{Design Decision: No Data Invention}
+
+Following the same principle as the PEMD module, the DI report never invents data. Fields that cannot be reliably inferred from the IFC model or tracker metadata (e.g., waste codes, percentage distributions, fili\`{e}res identifi\'{e}es, conditions techniques) are left empty or unchecked by default. The user must manually fill them. This ensures the DI report remains accurate and compliant with regulatory requirements.
 
 % --------------------------------------------------------
 \subsection{Tracking Module}
