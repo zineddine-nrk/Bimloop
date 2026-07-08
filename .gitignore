@@ -11,6 +11,9 @@ build/
 # Base de données
 *.db
 
+# Photos de composants (créées à l'exécution)
+backend/component_photos/
+
 # Fichiers temporaires IFC uploadés
 *.ifc
 
