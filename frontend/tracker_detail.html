@@ -423,7 +423,7 @@ function render(comp) {
             </div>
             <div class="card-body" style="text-align:center;">
                 ${comp.photo_url ? `
-                    <img id="componentPhoto" class="photo-img" src="${comp.photo_url}" alt="Component photo">
+                    <img id="componentPhoto" class="photo-img" src="${comp.photo_url}?t=${Date.now()}" alt="Component photo">
                     <div class="photo-actions">
                         <button class="btn btn-primary btn-sm" onclick="openCameraModal()">
                             <i data-lucide="camera"></i> Replace
@@ -790,8 +790,18 @@ async function uploadPhoto(fileOrBlob) {
         msg.style.color = "var(--danger-600)";
         return;
     }
+
+    const result = await res.json();
     msg.textContent = "✅ Photo saved.";
     msg.style.color = "var(--success-600)";
+
+    // Afficher immédiatement la photo sans attendre le rechargement
+    const existingImg = document.getElementById("componentPhoto");
+    if (existingImg && result.photo_url) {
+        existingImg.src = result.photo_url + "?t=" + Date.now();
+        existingImg.style.display = "block";
+    }
+    // Recharger la page pour mettre à jour les boutons (Replace/Delete)
     setTimeout(load, 600);
 }
 

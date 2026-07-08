@@ -210,12 +210,12 @@ def _verify_component_ownership(component_id: str, user_id: int):
 
 
 def _add_photo_url(comp: Optional[Dict], public: bool = False) -> Optional[Dict]:
-    """Ajoute photo_url au dict composant si une photo est enregistrée."""
+    """Ajoute photo_url au dict composant si une photo est enregistrée.
+    L'URL est toujours publique pour que la balise <img> puisse la charger sans auth."""
     if not comp:
         return comp
     photo_path = get_component_photo_path(comp["id"])
-    prefix = "/api/public/component" if public else "/api/tracker/component"
-    comp["photo_url"] = f"{prefix}/{comp['id']}/photo" if photo_path else None
+    comp["photo_url"] = f"/api/public/photo/{comp['id']}" if photo_path else None
     return comp
 
 
@@ -477,7 +477,7 @@ async def tracker_upload_photo(
         raise HTTPException(status_code=400, detail=str(e))
     return {
         "id": component_id,
-        "photo_url": f"/api/tracker/component/{component_id}/photo",
+        "photo_url": f"/api/public/photo/{component_id}",
         "photo_path": photo_path,
     }
 
@@ -502,9 +502,9 @@ async def tracker_delete_photo(component_id: str, current_user=Depends(get_curre
     return {"id": component_id, "deleted": True}
 
 
-@app.get("/api/public/component/{component_id:path}/photo")
+@app.get("/api/public/photo/{component_id:path}")
 async def public_component_photo(component_id: str, request: Request):
-    """Photo publique d'un composant (accessible via QR code sans auth)."""
+    """Photo publique d'un composant (accessible sans auth)."""
     from urllib.parse import unquote
     component_id = unquote(component_id)
     photo_path = get_component_photo_path(component_id)

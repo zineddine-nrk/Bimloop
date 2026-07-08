@@ -491,7 +491,7 @@ async function loadComponents() {
         const escId = c.id.replace(/"/g, '&quot;');
         const isSel = selectedIds.has(c.id);
         const photoCell = c.photo_url
-            ? `<img src="${c.photo_url}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:var(--radius-md);border:1px solid var(--border);cursor:pointer;" title="View component photo" onclick="event.stopPropagation(); window.open('${c.photo_url}', '_blank')">`
+            ? `<img src="${c.photo_url}?t=${Date.now()}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:var(--radius-md);border:1px solid var(--border);cursor:pointer;" title="View component photo" onclick="event.stopPropagation(); window.open('${c.photo_url}?t=${Date.now()}', '_blank')">`
             : `<span style="display:inline-block;width:40px;height:40px;border-radius:var(--radius-md);background:var(--bg-muted);border:1px dashed var(--border);color:var(--text-faint);font-size:18px;line-height:38px;text-align:center;" title="No photo">📷</span>`;
         return `
         <tr data-id="${escId}" class="${isSel?'selected-row':''}" onclick="rowClick(event, '${c.project_id}', '${encodeURIComponent(c.id)}')">
