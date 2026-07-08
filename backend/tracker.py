@@ -6,6 +6,7 @@ Base de données SQLite avec historique des changements de statut.
 import sqlite3
 import io
 import os
+import shutil
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
@@ -80,6 +81,10 @@ def init_db():
         for dim_col in ("hauteur", "longueur", "epaisseur", "net_area", "net_volume"):
             if dim_col not in cols:
                 conn.execute(f"ALTER TABLE components ADD COLUMN {dim_col} REAL")
+
+        # Migration : chemin de la photo du composant
+        if "photo_path" not in cols:
+            conn.execute("ALTER TABLE components ADD COLUMN photo_path TEXT")
 
         # Migration : ajouter project_id si absent + rattacher les anciennes données
         if "project_id" not in cols:
@@ -172,6 +177,8 @@ def get_project(project_id: int) -> Optional[Dict]:
 
 
 PROJECT_IFC_DIR = os.path.join(os.path.dirname(DB_PATH), "project_ifcs")
+PHOTO_DIR = os.path.join(os.path.dirname(DB_PATH), "component_photos")
+os.makedirs(PHOTO_DIR, exist_ok=True)
 
 def set_project_ifc(project_id: int, filename: str, content: bytes) -> Dict:
     """Stocke le fichier IFC source d'un projet sur disque + chemin en DB."""
@@ -601,6 +608,101 @@ def get_component_project_id(component_id: str) -> Optional[int]:
             "SELECT project_id FROM components WHERE id = ?", (component_id,)
         ).fetchone()
         return row[0] if row else None
+
+
+# ============================================================
+# PHOTOS
+# ============================================================
+
+ALLOWED_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+MAX_PHOTO_SIZE = 10 * 1024 * 1024  # 10 Mo
+
+
+def _photo_extension_from_content_type(content_type: Optional[str]) -> str:
+    """Retourne l'extension photo appropriée depuis le Content-Type."""
+    if not content_type:
+        return ".jpg"
+    ct = content_type.lower()
+    if "png" in ct:
+        return ".png"
+    if "webp" in ct:
+        return ".webp"
+    return ".jpg"
+
+
+def save_component_photo(component_id: str, photo_bytes: bytes,
+                         content_type: Optional[str] = None) -> str:
+    """Sauvegarde la photo d'un composant sur disque et met à jour la DB.
+    Retourne le chemin relatif de la photo."""
+    if len(photo_bytes) > MAX_PHOTO_SIZE:
+        raise ValueError("La photo dépasse la taille maximale autorisée (10 Mo).")
+
+    ext = _photo_extension_from_content_type(content_type)
+    if ext not in ALLOWED_PHOTO_EXTENSIONS:
+        raise ValueError(f"Format photo non supporté. Formats : {ALLOWED_PHOTO_EXTENSIONS}")
+
+    init_db()
+    # Nom de fichier sécurisé basé sur l'ID du composant
+    safe_id = "".join(c for c in component_id if c.isalnum() or c in "-_.$").rstrip()
+    filename = f"{safe_id}{ext}"
+    full_path = os.path.join(PHOTO_DIR, filename)
+
+    with open(full_path, "wb") as f:
+        f.write(photo_bytes)
+
+    # Chemin relatif stocké en DB (pour pouvoir déplacer PHOTO_DIR si besoin)
+    relative_path = os.path.join("component_photos", filename)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT id FROM components WHERE id = ?", (component_id,)
+        ).fetchone()
+        if not row:
+            raise KeyError(f"Composant introuvable : {component_id}")
+        conn.execute(
+            "UPDATE components SET photo_path = ?, updated_at = datetime('now') WHERE id = ?",
+            (relative_path, component_id),
+        )
+        conn.commit()
+    return relative_path
+
+
+def get_component_photo_path(component_id: str) -> Optional[str]:
+    """Retourne le chemin absolu de la photo du composant, ou None."""
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT photo_path FROM components WHERE id = ?", (component_id,)
+        ).fetchone()
+    if not row or not row[0]:
+        return None
+    full_path = os.path.join(os.path.dirname(DB_PATH), row[0])
+    if not os.path.exists(full_path):
+        return None
+    return full_path
+
+
+def delete_component_photo(component_id: str) -> bool:
+    """Supprime la photo d'un composant sur disque et en DB."""
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT photo_path FROM components WHERE id = ?", (component_id,)
+        ).fetchone()
+        if not row or not row[0]:
+            return False
+        full_path = os.path.join(os.path.dirname(DB_PATH), row[0])
+        if os.path.exists(full_path):
+            try:
+                os.remove(full_path)
+            except OSError:
+                pass
+        conn.execute(
+            "UPDATE components SET photo_path = NULL, updated_at = datetime('now') WHERE id = ?",
+            (component_id,),
+        )
+        conn.commit()
+    return True
 
 
 # ============================================================

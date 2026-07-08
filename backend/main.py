@@ -24,12 +24,15 @@ from tracker import (
     update_component_meta, CONDITIONS_VALIDES, AGES_VALIDES,
     set_project_ifc, get_project_ifc,
     project_belongs_to_user, component_belongs_to_user,
+    save_component_photo, get_component_photo_path, delete_component_photo,
 )
 from ifc_exporter import export_ifc_with_statuses
+from ifc_fixer import fix_ifc_from_corrections
 from reuse_csv import generate_reuse_csv, get_pemd_grouped_data, generate_reuse_csv_from_data
 from pemd_pdf import generate_pemd_pdf_from_data
 from di_csv import generate_di_csv, get_di_grouped_data, generate_di_csv_from_data
 from di_pdf import generate_di_pdf
+from validators import ValidationPipeline
 from btp_match_pdf import generate_btp_match_pdf
 
 from auth_db import init_auth_db
@@ -206,6 +209,16 @@ def _verify_component_ownership(component_id: str, user_id: int):
         raise HTTPException(status_code=404, detail="Composant introuvable.")
 
 
+def _add_photo_url(comp: Optional[Dict], public: bool = False) -> Optional[Dict]:
+    """Ajoute photo_url au dict composant si une photo est enregistrée."""
+    if not comp:
+        return comp
+    photo_path = get_component_photo_path(comp["id"])
+    prefix = "/api/public/component" if public else "/api/tracker/component"
+    comp["photo_url"] = f"{prefix}/{comp['id']}/photo" if photo_path else None
+    return comp
+
+
 class StatusesRequest(BaseModel):
     ids: List[str]
     project_id: Optional[int] = None
@@ -369,19 +382,20 @@ async def tracker_list(
     type: Optional[str] = None,
     current_user=Depends(get_current_user),
 ):
-    """Liste les composants (filtre par projet)."""
-    return get_all_components(
+    """Liste les composants (filtre par projet) avec leur photo URL."""
+    components = get_all_components(
         project_id=project_id, status_filter=status, type_filter=type
     )
+    return [_add_photo_url(c) for c in components]
 
 
 @protected_api.get("/tracker/component/{component_id}")
 async def tracker_detail(component_id: str, current_user=Depends(get_current_user)):
-    """Détail d'un composant avec son historique de statuts (lecture publique)."""
+    """Détail d'un composant avec son historique de statuts et sa photo."""
     comp = get_component(component_id)
     if not comp:
         raise HTTPException(status_code=404, detail="Composant introuvable.")
-    return comp
+    return _add_photo_url(comp)
 
 
 @protected_api.post("/tracker/component/{component_id}/status")
@@ -444,6 +458,59 @@ async def tracker_qr(component_id: str, request: Request, current_user=Depends(g
         component_id, base_url, project_id=comp.get("project_id")
     )
     return Response(content=png_bytes, media_type="image/png")
+
+
+@protected_api.post("/tracker/component/{component_id}/photo")
+async def tracker_upload_photo(
+    component_id: str,
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+):
+    """Upload ou remplace la photo d'un composant."""
+    _verify_component_ownership(component_id, current_user.id)
+    content = await file.read()
+    try:
+        photo_path = save_component_photo(component_id, content, content_type=file.content_type)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Composant introuvable.")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "id": component_id,
+        "photo_url": f"/api/tracker/component/{component_id}/photo",
+        "photo_path": photo_path,
+    }
+
+
+@protected_api.get("/tracker/component/{component_id}/photo")
+async def tracker_get_photo(component_id: str, current_user=Depends(get_current_user)):
+    """Retourne la photo d'un composant."""
+    _verify_component_ownership(component_id, current_user.id)
+    photo_path = get_component_photo_path(component_id)
+    if not photo_path:
+        raise HTTPException(status_code=404, detail="Aucune photo pour ce composant.")
+    return FileResponse(photo_path)
+
+
+@protected_api.delete("/tracker/component/{component_id}/photo")
+async def tracker_delete_photo(component_id: str, current_user=Depends(get_current_user)):
+    """Supprime la photo d'un composant."""
+    _verify_component_ownership(component_id, current_user.id)
+    deleted = delete_component_photo(component_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Aucune photo à supprimer.")
+    return {"id": component_id, "deleted": True}
+
+
+@app.get("/api/public/component/{component_id:path}/photo")
+async def public_component_photo(component_id: str, request: Request):
+    """Photo publique d'un composant (accessible via QR code sans auth)."""
+    from urllib.parse import unquote
+    component_id = unquote(component_id)
+    photo_path = get_component_photo_path(component_id)
+    if not photo_path:
+        raise HTTPException(status_code=404, detail="Aucune photo pour ce composant.")
+    return FileResponse(photo_path)
 
 
 @protected_api.get("/tracker/stats")
@@ -622,7 +689,122 @@ async def tracker_export_waste(project_id: int, req: WasteExportRequest, current
         raise HTTPException(status_code=500, detail=f"Échec export déchets : {e}")
 
 
-@protected_api.post("/tracker/component/{component_id}/meta")
+# ============ VALIDATION IFC ============
+
+_validation_cache: dict = {}
+
+from pydantic import BaseModel as PydanticBaseModel
+
+class ValidateRequest(PydanticBaseModel):
+    project_name: str = ""
+
+@protected_api.post("/validate/upload")
+async def validate_ifc(file: UploadFile = File(...), project_name: str = "", current_user=Depends(get_current_user)):
+    """Analyse la qualité d'une maquette IFC pour le réemploi.
+    Non-bloquant : l'extraction et le tracking restent disponibles."""
+    if not file.filename.lower().endswith(".ifc"):
+        raise HTTPException(status_code=400, detail="Format .ifc requis.")
+
+    file_path = os.path.join(UPLOAD_DIR, f"validate_{file.filename}")
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        pipeline = ValidationPipeline()
+        report = pipeline.execute(file_path, project_name or file.filename)
+
+        import uuid
+        report_id = str(uuid.uuid4())[:8]
+        _validation_cache[report_id] = report
+        report["report_id"] = report_id
+
+        return report
+    except Exception as e:
+        import traceback
+        print("[validate] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Échec validation : {e}")
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+
+@protected_api.post("/tracker/projects/{project_id}/validate")
+async def validate_project_ifc(project_id: int, current_user=Depends(get_current_user)):
+    """Valide la maquette IFC du projet pour le réemploi."""
+    _verify_ownership(project_id, current_user.id)
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    ifc_info = get_project_ifc(project_id)
+    if not ifc_info or not os.path.exists(ifc_info["path"]):
+        raise HTTPException(status_code=400, detail="Aucun fichier IFC trouvé pour ce projet. Importez d'abord un IFC.")
+
+    try:
+        pipeline = ValidationPipeline()
+        report = pipeline.execute(ifc_info["path"], project.get("name", ""))
+        import uuid
+        report_id = str(uuid.uuid4())[:8]
+        _validation_cache[report_id] = report
+        report["report_id"] = report_id
+        return report
+    except Exception as e:
+        import traceback
+        print("[validate-project] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Échec validation : {e}")
+
+
+@protected_api.get("/validate/report/{report_id}")
+async def get_validation_report(report_id: str, current_user=Depends(get_current_user)):
+    """Récupère le rapport de validation par ID."""
+    report = _validation_cache.get(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Rapport introuvable.")
+    return report
+
+
+@protected_api.get("/validate/report/{report_id}/pdf")
+async def get_validation_report_pdf(report_id: str, current_user=Depends(get_current_user)):
+    """Télécharge le rapport de validation en PDF."""
+    report = _validation_cache.get(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Rapport introuvable.")
+    from validators.report_generator import to_pdf as validation_to_pdf
+    pdf_bytes = validation_to_pdf(report, report.get("project", ""))
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="validation_{report_id}.pdf"'},
+    )
+
+
+class FixIfcRequest(BaseModel):
+    corrections: List[Dict[str, Any]]
+
+
+@protected_api.post("/tracker/projects/{project_id}/fix-ifc")
+async def tracker_fix_ifc(project_id: int, req: FixIfcRequest, current_user=Depends(get_current_user)):
+    """Reçoit les corrections de l'utilisateur et retourne un IFC corrigé."""
+    _verify_ownership(project_id, current_user.id)
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    ifc_info = get_project_ifc(project_id)
+    if not ifc_info or not os.path.exists(ifc_info["path"]):
+        raise HTTPException(status_code=400, detail="Aucun fichier IFC trouvé pour ce projet. Importez d'abord un IFC.")
+
+    try:
+        fixed_bytes = fix_ifc_from_corrections(ifc_info["path"], req.corrections)
+    except Exception as e:
+        import traceback
+        print("[fix-ifc] ERREUR :\n" + traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Échec correction IFC : {e}")
+
+    out_filename = f"{project.get('name', 'projet')}_corrige.ifc"
+    return Response(
+        content=fixed_bytes,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{out_filename}"'},
+    )
 async def tracker_update_meta(component_id: str, req: MetaUpdateRequest, current_user=Depends(get_current_user)):
     """Met à jour les métadonnées du composant (condition, commentaire, durée de vie, âge estimé)."""
     _verify_component_ownership(component_id, current_user.id)
@@ -794,7 +976,7 @@ async def public_component_detail(component_id: str, request: Request):
             "sample_ids": matching,
             "count": len(comps),
         })
-    return comp
+    return _add_photo_url(comp, public=True)
 
 
 @app.post("/api/public/statuses")

@@ -122,6 +122,9 @@
                     <button class="btn btn-secondary btn-sm" id="exportDiBtn" onclick="openDiModal()" title="Caractérisation des déchets">
                         <i data-lucide="trash-2"></i> Caractérisation des déchets
                     </button>
+                    <button class="btn btn-secondary btn-sm" id="validateIfcBtn" onclick="validateProjectIfc()" title="Vérifier la qualité de la maquette IFC">
+                        <i data-lucide="check-circle"></i> Valider l'IFC
+                    </button>
                     <button class="btn btn-secondary btn-sm" id="exportBtpMatchBtn" onclick="downloadBtpMatchPdf()" title="Generate a BTP Match PDF report">
                         <i data-lucide="file-text"></i> BTP Match Export
                     </button>
@@ -163,6 +166,7 @@
                 <th style="width:40px; text-align:center;">
                     <input type="checkbox" id="selectAllChk" onclick="toggleSelectAll(this)" title="Select all" class="row-chk">
                 </th>
+                <th style="width:60px; text-align:center;">Photo</th>
                 <th>ID</th>
                 <th>Type</th>
                 <th>Material</th>
@@ -171,7 +175,7 @@
                 <th>Updated</th>
             </tr>
         </thead>
-        <tbody id="compBody"><tr><td colspan="7" class="empty-msg">Loading…</td></tr></tbody>
+        <tbody id="compBody"><tr><td colspan="8" class="empty-msg">Loading…</td></tr></tbody>
     </table>
 
 </div>
@@ -464,7 +468,7 @@ async function loadStats() {
 async function loadComponents() {
     const body = document.getElementById("compBody");
     if (!currentProjectId) {
-        body.innerHTML = '<tr><td colspan="7" class="empty-msg">Create a project to get started.</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" class="empty-msg">Create a project to get started.</td></tr>';
         document.getElementById("countLabel").textContent = "";
         return;
     }
@@ -479,19 +483,23 @@ async function loadComponents() {
     document.getElementById("countLabel").textContent = `${data.length} component(s)`;
 
     if (!data.length) {
-        body.innerHTML = '<tr><td colspan="7" class="empty-msg">No components found.</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" class="empty-msg">No components found.</td></tr>';
         clearSelection();
         return;
     }
     body.innerHTML = data.map(c => {
         const escId = c.id.replace(/"/g, '&quot;');
         const isSel = selectedIds.has(c.id);
+        const photoCell = c.photo_url
+            ? `<img src="${c.photo_url}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:var(--radius-md);border:1px solid var(--border);cursor:pointer;" title="View component photo" onclick="event.stopPropagation(); window.open('${c.photo_url}', '_blank')">`
+            : `<span style="display:inline-block;width:40px;height:40px;border-radius:var(--radius-md);background:var(--bg-muted);border:1px dashed var(--border);color:var(--text-faint);font-size:18px;line-height:38px;text-align:center;" title="No photo">📷</span>`;
         return `
         <tr data-id="${escId}" class="${isSel?'selected-row':''}" onclick="rowClick(event, '${c.project_id}', '${encodeURIComponent(c.id)}')">
             <td style="text-align:center;" onclick="event.stopPropagation()">
                 <input type="checkbox" class="row-chk" data-id="${escId}" ${isSel?'checked':''}
                        onclick="toggleRowCheck(this, event)">
             </td>
+            <td style="text-align:center;" onclick="event.stopPropagation()">${photoCell}</td>
             <td class="text-mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.id}">${c.id}</td>
             <td>${tyLbl(c.type)}</td>
             <td>${c.material||"—"}</td>
@@ -1221,6 +1229,336 @@ async function exportWasteReport(format) {
     await loadComponents();
     refreshExportIfcLabel();
 })();
+
+// ============ IFC VALIDATION ============
+async function validateProjectIfc() {
+    if (!currentProjectId) { alert("No project selected."); return; }
+
+    // Vérifier d'abord si un IFC est déjà présent
+    try {
+        const infoRes = await fetch(`/api/tracker/projects/${currentProjectId}/ifc-info`);
+        const info = await infoRes.json();
+        if (!info.has_ifc) {
+            // Pas d'IFC → proposer l'upload
+            const input = document.getElementById("validateIfcInput");
+            if (!input) {
+                const inp = document.createElement("input");
+                inp.type = "file"; inp.accept = ".ifc"; inp.id = "validateIfcInput"; inp.style.display = "none";
+                inp.onchange = () => uploadAndValidate(inp);
+                document.body.appendChild(inp);
+                inp.click();
+            } else {
+                input.click();
+            }
+            return;
+        }
+    } catch (e) {
+        alert(`Erreur vérification IFC: ${e.message}`);
+        return;
+    }
+
+    await runValidation();
+}
+
+async function uploadAndValidate(input) {
+    if (!input.files.length) return;
+    const btn = document.getElementById("validateIfcBtn");
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2"></i> Upload IFC…`;
+    if (window.lucide) lucide.createIcons();
+
+    const form = new FormData();
+    form.append("file", input.files[0]);
+    try {
+        const upRes = await fetch(`/api/tracker/projects/${currentProjectId}/ifc`, {
+            method: "POST", body: form,
+        });
+        if (!upRes.ok) {
+            const err = await upRes.json().catch(() => ({}));
+            alert(`Upload error: ${err.detail || upRes.status}`);
+            return;
+        }
+        await runValidation();
+    } catch (e) {
+        alert(`Upload error: ${e.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        if (window.lucide) lucide.createIcons();
+    }
+}
+
+async function runValidation() {
+    const btn = document.getElementById("validateIfcBtn");
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2"></i> Validation…`;
+    if (window.lucide) lucide.createIcons();
+
+    try {
+        const res = await fetch(`/api/tracker/projects/${currentProjectId}/validate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(`Validation error: ${err.detail || res.status}`);
+            return;
+        }
+        const report = await res.json();
+        showValidationReport(report);
+    } catch (e) {
+        alert(`Validation error: ${e.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        if (window.lucide) lucide.createIcons();
+    }
+}
+
+function showValidationReport(report) {
+    window._validationReport = report;  // store for fix form
+    const g = report.grade;
+    const gradeColors = { A: '#22c55e', B: '#eab308', C: '#f97316', D: '#ef4444' };
+    const gradeLabels = { A: 'Prêt pour réemploi', B: 'Réemployable avec compléments', C: 'Données insuffisantes', D: 'Non conforme' };
+    const color = gradeColors[g] || '#000';
+
+    document.getElementById("validationModal")?.remove();
+    const overlay = document.createElement("div");
+    overlay.id = "validationModal";
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+        <div class="modal-box" style="max-width: 700px;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content:space-between;">
+                <h3 class="modal-title"><i data-lucide="check-circle"></i> Validation IFC</h3>
+                <button class="btn btn-secondary btn-sm" onclick="this.closest('.modal-overlay').remove()">Close</button>
+            </div>
+            <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                <div style="text-align:center;padding:16px;">
+                    <div style="font-size:48px;font-weight:800;color:${color};">${g}</div>
+                    <div style="font-size:14px;color:var(--text-muted);">${gradeLabels[g]}</div>
+                    <div style="font-size:24px;font-weight:600;margin:8px 0;color:var(--text-strong);">Score : ${report.global_score}%</div>
+                    <div style="font-size:13px;color:var(--text-muted);">
+                        ${report.total_elements} éléments analysés |
+                        🔴 ${report.blocking_count} éléments non conformes
+                    </div>
+                </div>
+
+                <h4 style="margin:12px 0 8px;font-size:14px;">Par type</h4>
+                <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#1e3a5f;color:white;">
+                            <th style="padding:6px;">Type</th><th style="padding:6px;">Nb</th><th style="padding:6px;">Score</th><th style="padding:6px;">Bloq.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${Object.entries(report.per_type).map(([t, v]) => `
+                        <tr style="text-align:center;border-bottom:1px solid var(--border);">
+                            <td style="padding:6px;">${t.replace('Ifc','')}</td>
+                            <td>${v.total}</td>
+                            <td style="color:${gradeColors[v.grade]};font-weight:600;">${v.score}%</td>
+                            <td style="color:${v.blocking > 0 ? 'red' : 'green'};">${v.blocking}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+
+                ${report.blocking_count > 0 ? `
+                <h4 style="margin:16px 0 8px;font-size:14px;color:#dc2626;">🔴 Éléments bloquants</h4>
+                ${report.elements.filter(e => e.blocking).slice(0, 10).map(e => `
+                <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:8px;margin:4px 0;font-size:11px;">
+                    <b>${e.type.replace('Ifc','')} — ${e.name}</b> (Score: ${e.score}%)
+                    ${e.checks.filter(c => !c.passed).map(c => `
+                    <div style="color:#dc2626;margin-left:12px;">❌ ${c.attribute} : ${c.description}</div>
+                    `).join('')}
+                </div>`).join('')}
+                ` : ''}
+
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
+                <button class="btn btn-primary" onclick="downloadValidationPdf('${report.report_id}')"><i data-lucide="file-text"></i> Telecharger PDF</button>
+                <button class="btn btn-success" style="background:#22c55e;color:white;border:none;" onclick="showFixForm()">
+                    <i data-lucide="wrench"></i> Corriger et exporter IFC
+                </button>
+            </div>
+        </div>`;
+    overlay.addEventListener("click", () => overlay.remove());
+    document.body.appendChild(overlay);
+    if (window.lucide) lucide.createIcons();
+}
+
+let _lastValidationReport = null;
+
+function showFixForm() {
+    if (!_lastValidationReport) {
+        _lastValidationReport = null;  // loaded from validation modal context
+    }
+    // Close validation modal
+    const vm = document.getElementById("validationModal");
+    if (vm) vm.remove();
+
+    // Reload report from the stored cache — find the report_id
+    const report = window._validationReport;
+    if (!report) { alert("No validation data."); return; }
+    _lastValidationReport = report;
+
+    // Gather fixable errors (failed checks that aren't GlobalId)
+    const fixable = [];
+    for (const el of report.elements) {
+        for (const c of el.checks) {
+            if (!c.passed && c.attribute !== "GlobalId" && c.source !== "location") {
+                fixable.push({
+                    element_id: el.element_id,
+                    element_name: el.name,
+                    element_type: el.type,
+                    attribute: c.attribute,
+                    description: c.description,
+                    source: c.source,
+                    pset_name: c.pset || "",
+                    qto_name: c.qto_name || "",
+                    priority: c.priority,
+                    current_value: c.value || "",
+                });
+            }
+        }
+    }
+
+    if (fixable.length === 0) {
+        alert("No fixable errors found. All attributes are OK!");
+        return;
+    }
+
+    // Build the fix form
+    document.getElementById("fixModal")?.remove();
+    const overlay = document.createElement("div");
+    overlay.id = "fixModal";
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+        <div class="modal-box" style="max-width: 800px;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content:space-between;">
+                <h3 class="modal-title"><i data-lucide="wrench"></i> Corriger les erreurs IFC</h3>
+                <button class="btn btn-secondary btn-sm" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                <p class="text-muted text-sm" style="margin-bottom:12px;">
+                    ${fixable.length} champ(s) corrigible(s). Remplissez les champs souhaites puis cliquez sur <strong>Appliquer et telecharger</strong>.
+                    Les champs laisses vides seront ignores.
+                </p>
+                <div id="fixFormFields"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
+                <button class="btn btn-success" id="submitFixBtn" style="background:#22c55e;color:white;border:none;" onclick="submitFixes()">
+                    <i data-lucide="download"></i> Appliquer et telecharger
+                </button>
+            </div>
+        </div>`;
+    overlay.addEventListener("click", () => overlay.remove());
+    document.body.appendChild(overlay);
+
+    // Group fixable errors by element
+    let currentElementId = "";
+    let fieldsHtml = "";
+    for (let i = 0; i < fixable.length; i++) {
+        const f = fixable[i];
+        if (f.element_id !== currentElementId) {
+            currentElementId = f.element_id;
+            const typeLabel = f.element_type.replace("Ifc","");
+            fieldsHtml += `<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:8px 12px;margin-bottom:8px;">
+                <div style="font-weight:600;font-size:13px;color:var(--text-strong);">${typeLabel} — ${f.element_name}</div>
+                <div style="font-size:11px;color:var(--text-muted);font-family:consolas;word-break:break-all;">${f.element_id}</div>
+            </div>`;
+        }
+        const fieldId = `fix_${i}_${f.attribute.replace(/[^a-zA-Z0-9]/g,'_')}`;
+        const priorityBadge = f.priority === "C" ? '<span style="background:#fee2e2;color:#dc2626;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px;">Critique</span>' : '';
+        fieldsHtml += `
+            <div style="margin:6px 0;padding:6px 8px;background:var(--bg-muted);border-radius:var(--radius-sm);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:200px;">
+                    <div style="font-size:12px;font-weight:500;color:var(--text-base);">
+                        ${f.attribute}${priorityBadge}
+                    </div>
+                    <div style="font-size:11px;color:var(--text-muted);">${f.description}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <input type="text" id="${fieldId}" class="form-input" placeholder="${f.current_value || 'Valeur...'}"
+                           data-element_id="${f.element_id}" data-attribute="${f.attribute}"
+                           data-source="${f.source}" data-pset_name="${f.pset_name}"
+                           data-qto_name="${f.qto_name}" style="width:180px;font-size:13px;padding:6px 10px;">
+                </div>
+            </div>`;
+    }
+    document.getElementById("fixFormFields").innerHTML = fieldsHtml;
+    if (window.lucide) lucide.createIcons();
+}
+
+async function submitFixes() {
+    const btn = document.getElementById("submitFixBtn");
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = "Processing...";
+
+    const inputs = document.querySelectorAll("#fixFormFields input[type=text]");
+    const corrections = [];
+    inputs.forEach(inp => {
+        const val = inp.value.trim();
+        if (!val) return;
+        corrections.push({
+            element_id: inp.dataset.element_id,
+            attribute: inp.dataset.attribute,
+            source: inp.dataset.source,
+            pset_name: inp.dataset.pset_name || "",
+            qto_name: inp.dataset.qto_name || "",
+            value: val,
+        });
+    });
+
+    if (corrections.length === 0) {
+        alert("Aucune correction saisie.");
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/tracker/projects/${currentProjectId}/fix-ifc`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ corrections }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(`Erreur: ${err.detail || res.status}`);
+            return;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "ifc_corrige.ifc"; a.click();
+        URL.revokeObjectURL(url);
+
+        // Update UI feedback
+        btn.innerHTML = "Telecharge !";
+        btn.style.background = "#16a34a";
+        setTimeout(() => {
+            document.getElementById("fixModal")?.remove();
+        }, 2000);
+    } catch (e) {
+        alert(`Erreur: ${e.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+    }
+}
+
+async function downloadValidationPdf(reportId) {
+    const res = await fetch(`/api/validate/report/${reportId}/pdf`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `validation_${reportId}.pdf`; a.click();
+    URL.revokeObjectURL(url);
+}
 </script>
 
 </body>
